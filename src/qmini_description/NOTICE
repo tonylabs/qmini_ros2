@@ -1,0 +1,11 @@
+URDF + meshes copied from:
+  ~/Documents/GitHub/qmini_isaaclab/source/Qmini/assets/descriptions/qmini/
+
+The Isaac Lab repo is the source of truth. If you change geometry, joint
+names, joint limits, or anything affecting the dynamics, update the source
+in qmini_isaaclab and re-copy here. Diverging the two will produce a policy
+trained for a robot that does not match the one being controlled.
+
+Path rewrite: mesh `filename="meshes/*.STL"` (relative, IL convention) was
+changed to `filename="package://qmini_description/meshes/*.STL"` (ROS 2
+ament_index convention). Other content is byte-identical to the source.

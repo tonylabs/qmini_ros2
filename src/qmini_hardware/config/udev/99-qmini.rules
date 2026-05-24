@@ -1,0 +1,39 @@
+# Qmini udev rules — pin USB-to-RS-485 adapter ports + IMU to stable names.
+#
+# Install with:
+#     sudo cp 99-qmini.rules /etc/udev/rules.d/
+#     sudo udevadm control --reload
+#     sudo udevadm trigger
+#
+# After install, the four motor bus ports and the IMU appear as:
+#     /dev/qmini_motor_ch1   (hip yaw bus)
+#     /dev/qmini_motor_ch2   (hip roll bus)
+#     /dev/qmini_motor_ch3   (left lower bus)
+#     /dev/qmini_motor_ch4   (right lower bus)
+#     /dev/qmini_imu         (Wheeltec N100)
+#
+# Then motor_layout.yaml can reference /dev/qmini_motor_ch1 instead of the
+# verbose /dev/serial/by-id/...
+#
+# DISCOVERY: with the adapter plugged in, find idVendor / idProduct / serial:
+#     ls -la /dev/serial/by-id/
+#     udevadm info -a -n /dev/ttyUSB0 | grep -E "idVendor|idProduct|serial" | head
+# Replace the XXXX placeholders below with the real values.
+
+# --- 4-channel RS-485 adapter (FTDI FT4232H, serial FTA98W5B) ---
+# FT4232H exposes 4 UARTs as separate USB interfaces (if00..if03) on a single
+# device. The interface number is the natural disambiguator. Adjust the
+# ch1..ch4 → if00..if03 mapping if your adapter's physical channel ordering
+# differs from the interface ordering.
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6011", ATTRS{serial}=="FTA98W5B", ENV{ID_USB_INTERFACE_NUM}=="00", SYMLINK+="qmini_motor_ch1", MODE="0660", GROUP="dialout"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6011", ATTRS{serial}=="FTA98W5B", ENV{ID_USB_INTERFACE_NUM}=="01", SYMLINK+="qmini_motor_ch2", MODE="0660", GROUP="dialout"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6011", ATTRS{serial}=="FTA98W5B", ENV{ID_USB_INTERFACE_NUM}=="02", SYMLINK+="qmini_motor_ch3", MODE="0660", GROUP="dialout"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6011", ATTRS{serial}=="FTA98W5B", ENV{ID_USB_INTERFACE_NUM}=="03", SYMLINK+="qmini_motor_ch4", MODE="0660", GROUP="dialout"
+
+# --- Wheeltec N100 IMU (CP2102 USB-to-serial, serial="0001") ---
+# CP2102 default vendor/product = 10c4:ea60. The Wheeltec N100 ships with
+# serial="0001" (CP2102's factory default — many unprogrammed CP2102 devices
+# share this serial, so if you ever plug in a second CP2102 device, this rule
+# will match both and need disambiguation).
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="0001", SYMLINK+="qmini_imu", MODE="0660", GROUP="dialout"

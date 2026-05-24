@@ -1,0 +1,3 @@
+[submodule "src/qmini_hardware/third_party/unitree_actuator_sdk"]
+	path = src/qmini_hardware/third_party/unitree_actuator_sdk
+	url = https://github.com/unitreerobotics/unitree_actuator_sdk

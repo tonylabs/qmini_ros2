@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>qmini_imu</name>
+  <version>0.0.1</version>
+  <description>Wrapper around the Wheeltec N100 (fdilink_ahrs) ROS 2 driver. Adds a stale-message watchdog and remaps the topic to /imu/data. Configures the N100 in fused AHRS mode (imu_projected_gravity requires valid orientation).</description>
+  <maintainer email="okay1984@gmail.com">Tony Wang</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <!-- Wheeltec driver is loaded by composition in launch; not a build-time dep. -->
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

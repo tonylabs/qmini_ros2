@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>qmini_joystick</name>
+  <version>0.0.1</version>
+  <description>Parses PS4 DualShock /joy (over Bluetooth) into qmini_msgs/JoystickCommand. Deadman (L1), soft/hard stop combos, mode select, velocity-cap training-wheels via D-pad. Sends ONLY parsed commands; the safety state machine lives in qmini_safety.</description>
+  <maintainer email="okay1984@gmail.com">Tony Wang</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>qmini_msgs</depend>
+  <exec_depend>joy</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

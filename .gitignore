@@ -1,0 +1,39 @@
+# Jetbrains
+/.idea
+
+# macOS Finder
+.DS_Store
+Thumbs.db
+
+# colcon build artifacts
+build/
+install/
+log/
+
+# IDE / editor
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# rosbag2 recordings — commit only the YAML summary rows, never raw bags
+*.db3
+*.mcap
+*.bag
+src/qmini_calibration/data/
+
+# Stale ONNX checkpoints (the active one stays as src/qmini_rl/policies/policy.onnx)
+*.pt
+src/qmini_rl/policies/*.onnx.bak
+src/qmini_rl/policies/old_*.onnx
+
+# Local ONNX Runtime install
+onnxruntime-*/

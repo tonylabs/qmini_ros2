@@ -1,0 +1,59 @@
+# Qmini RS-485 motor bus layout.
+#
+# The USB-to-4-channel adapter exposes four serial ports. Each channel is a
+# self-contained RS-485 bus with 2 or 3 GO-M8010-6 motors on it. Motor IDs
+# restart at 0 per channel (per-channel 0-based scheme).
+#
+# Edit the four `port:` lines below with the actual /dev/serial/by-id/...
+# paths after plugging the adapter in. Discover them with:
+#     ls -la /dev/serial/by-id/
+# Use the by-id paths, NOT /dev/ttyUSB[0-3] — USB enumeration order is not
+# stable across reboots. Pinning via udev (see config/udev/99-qmini.rules)
+# is also recommended.
+
+# Polling target. Caps to the slowest channel's achievable rate at runtime.
+joint_state_publish_rate_hz: 200.0
+
+# Default per-bus baud rate. Stock Unitree firmware for the GO-M8010-6 ships
+# at 4 Mbps; override per-channel below if you've reflashed.
+default_baud_rate: 4000000
+
+# Channel assignment assumes if00→ch1, if01→ch2, if02→ch3, if03→ch4 on the
+# FT4232H quad-channel adapter. If the wrong joint moves during M1 testing,
+# swap the `port:` lines below — no rebuild needed.
+
+channels:
+  - name: hip_yaw_bus
+    port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTA98W5B-if00-port0
+    baud_rate: 4000000
+    motors:
+      - { joint: hip_yaw_l, id: 0 }
+      - { joint: hip_yaw_r, id: 1 }
+
+  # Hip-roll motors carry a SECOND external gear stage on top of the
+  # GO-M8010-6's internal 6.33:1 reducer (extra 3:1 -> 18.99:1 total). All
+  # other joints use the default 6.33. Getting this wrong makes the hip-roll
+  # angle read ~3x off and commands ~3x off. (Confirmed against the official
+  # SDK's "special motor" handling and the robot's mechanics.)
+  - name: hip_roll_bus
+    port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTA98W5B-if01-port0
+    baud_rate: 4000000
+    motors:
+      - { joint: hip_roll_l, id: 0, gear_ratio: 18.99 }
+      - { joint: hip_roll_r, id: 1, gear_ratio: 18.99 }
+
+  - name: left_lower_bus
+    port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTA98W5B-if02-port0
+    baud_rate: 4000000
+    motors:
+      - { joint: hip_pitch_l,   id: 0 }
+      - { joint: knee_pitch_l,  id: 1 }
+      - { joint: ankle_pitch_l, id: 2 }
+
+  - name: right_lower_bus
+    port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTA98W5B-if03-port0
+    baud_rate: 4000000
+    motors:
+      - { joint: hip_pitch_r,   id: 0 }
+      - { joint: knee_pitch_r,  id: 1 }
+      - { joint: ankle_pitch_r, id: 2 }
