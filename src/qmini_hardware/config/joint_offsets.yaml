@@ -1,29 +1,14 @@
-# Qmini joint zero offsets [rad, joint-side].
-#
-# The GO-M8010-6 has only a rotor-side encoder, so the joint zero is unknown at
-# power-on and must be calibrated (homing). The motor bus applies, per joint:
-#     joint_q = motor_q / gear_ratio - offset
-#
-# CALIBRATION PROCEDURE (no torque is applied):
-#   1. Launch the motor bus (motors powered, freewheeling).
-#   2. Physically hold the robot at the ALL-JOINTS-ZERO jig pose (every joint
-#      aligned to its 0 rad reference / alignment marks).
-#   3. Call the capture service:
-#        ros2 service call /motor_bus_node/capture_home_offsets std_srvs/srv/Trigger
-#      It records offset = motor_q / gear_ratio for each responding motor and
-#      OVERWRITES this file. /joint_states should then read ~0 at the jig pose.
-#
-# All zeros below = UNCALIBRATED. Absolute joint angles are not meaningful until
-# a capture is done on THIS robot (offsets are per-robot — do not copy another
-# robot's values).
+# Qmini joint zero offsets [rad, joint-side], captured at the
+# all-joints-zero jig pose via ~/capture_home_offsets.
+#   joint_q = motor_q / gear_ratio - offset
 offsets:
-  hip_yaw_l: 0.000000
-  hip_roll_l: 0.000000
-  hip_pitch_l: 0.000000
-  knee_pitch_l: 0.000000
-  ankle_pitch_l: 0.000000
-  hip_yaw_r: 0.000000
-  hip_roll_r: 0.000000
-  hip_pitch_r: 0.000000
-  knee_pitch_r: 0.000000
-  ankle_pitch_r: 0.000000
+  hip_yaw_l: 0.178995
+  hip_roll_l: 0.190526
+  hip_pitch_l: 0.211529
+  knee_pitch_l: 0.613927
+  ankle_pitch_l: 0.711346
+  hip_yaw_r: 0.278413
+  hip_roll_r: 0.308190
+  hip_pitch_r: 0.632072
+  knee_pitch_r: 0.243002
+  ankle_pitch_r: 0.135344
