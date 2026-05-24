@@ -1,17 +1,20 @@
 // Copyright 2026 Tony Wang
 // SPDX-License-Identifier: BSD-3-Clause
 //
-// qmini_hardware / motor_bus_node — M1 (read-only "torque-disabled" mode).
+// qmini_hardware / motor_bus_node — M2.2 (command path; torque opt-in).
 //
 // Layout: ONE node, ONE polling thread per RS-485 channel. Each thread owns
 // its own SerialPort (SerialPort is not thread-safe). A wall timer in the
 // main thread snapshots each channel's most-recent MotorData and publishes
 // a single aggregated sensor_msgs/JointState at the configured rate.
 //
-// In M1 the node sends all-zeros commands (mode=FOC, kp=kd=q=dq=tau=0): the
-// motor freewheels but still reports its encoder, so a human pushing the
-// joint by hand will see /joint_states update. No MotorCommand handling
-// yet — that arrives in M2 once the safety/PD path is wired.
+// Each poll cycle, fill_command() sets the outgoing MotorCmd from the latest
+// /motor_command (joint-side), applying the safety policy and the joint->motor
+// conversion. SAFETY: torque is applied only when enable_motor_torque:=true AND
+// MotionGate==ENABLED AND the safety heartbeat is fresh; otherwise it sends
+// kp=kd=tau=0 (read-only). With torque disabled (the default) the node behaves
+// exactly like M1: motors freewheel and report their encoders, so hand-pushing
+// a joint still updates /joint_states.
 //
 // Gear ratio + zero offset: the SDK reports motor-side q / dq / tau. The URDF
 // and the Isaac Lab cfg work in joint-side radians. The GO-M8010-6 has only a
@@ -29,6 +32,7 @@
 #include <chrono>
 #include <cmath>
 #include <deque>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <limits>
@@ -44,6 +48,7 @@
 #include "std_srvs/srv/trigger.hpp"
 #include "qmini_msgs/msg/safety_heartbeat.hpp"
 #include "qmini_msgs/msg/motion_gate.hpp"
+#include "qmini_msgs/msg/motor_command.hpp"
 
 #include "serialPort/SerialPort.h"
 #include "unitreeMotor/unitreeMotor.h"
@@ -63,10 +68,17 @@ struct MotorSlot {
   std::string joint;
   int id;
   double ratio{6.33};              // per-joint reduction (hip-roll = 18.99)
+  double direction{1.0};           // +1, or -1 if motor rotation is inverted vs URDF
   std::atomic<double> offset{0.0}; // homing offset [rad, joint-side]
   MotorData latest;                // protected by mutex
   std::mutex mu;
   std::atomic<bool> has_fresh{false};
+
+  // Latest JOINT-SIDE command, written by the /motor_command callback and read
+  // by the poll thread. Converted to motor-side just before sending.
+  std::atomic<double> cmd_q{0.0}, cmd_dq{0.0}, cmd_tau{0.0}, cmd_kp{0.0}, cmd_kd{0.0};
+  std::atomic<bool> has_command{false};
+  std::atomic<int64_t> last_cmd_ns{0};
 };
 
 struct Channel {
@@ -100,6 +112,26 @@ class MotorBusNode : public rclcpp::Node {
     // service. Empty = default share-path location.
     declare_parameter<std::string>("offsets_file", "");
 
+    // --- M2.2 command path (torque) ---------------------------------------
+    // SAFETY: torque is applied ONLY when enable_motor_torque is true. Default
+    // false keeps the node in read-only (M1) mode even while commands stream in,
+    // so the node ships safe and energizing is an explicit, deliberate opt-in.
+    declare_parameter<bool>("enable_motor_torque", false);
+    // Scale on the commanded kp/kd at the motor (1.0 = full Isaac Lab gains).
+    declare_parameter<double>("command_gain_scale", 1.0);
+    // Watchdogs: lose the safety heartbeat or fresh commands for longer than
+    // these and torque is dropped / held (see fill_command).
+    declare_parameter<double>("heartbeat_timeout_s", 0.1);   // ~5 missed 50 Hz beats
+    declare_parameter<double>("command_timeout_s", 0.2);
+
+    torque_enabled_.store(get_parameter("enable_motor_torque").as_bool(),
+                          std::memory_order_relaxed);
+    gain_scale_ = get_parameter("command_gain_scale").as_double();
+    hb_timeout_ns_ = static_cast<int64_t>(
+        get_parameter("heartbeat_timeout_s").as_double() * 1e9);
+    cmd_timeout_ns_ = static_cast<int64_t>(
+        get_parameter("command_timeout_s").as_double() * 1e9);
+
     gear_ratio_ = queryGearRatio(MotorType::GO_M8010_6);
     if (gear_ratio_ <= 0.0f) {
       RCLCPP_FATAL(get_logger(), "queryGearRatio returned %.3f — refusing to start.",
@@ -129,14 +161,19 @@ class MotorBusNode : public rclcpp::Node {
     gate_sub_ = create_subscription<qmini_msgs::msg::MotionGate>(
         "safety/motion_gate", gate_qos,
         [this](const qmini_msgs::msg::MotionGate::SharedPtr m) {
-          motion_enabled_.store(
-              m->state == qmini_msgs::msg::MotionGate::STATE_ENABLED,
-              std::memory_order_relaxed);
+          gate_state_.store(m->state, std::memory_order_relaxed);
+          const bool enabled = m->state == qmini_msgs::msg::MotionGate::STATE_ENABLED;
+          motion_enabled_.store(enabled, std::memory_order_relaxed);
           RCLCPP_INFO(get_logger(),
                       "MotionGate -> state=%u (enabled=%s) reason=\"%s\"",
-                      m->state, motion_enabled_ ? "yes" : "no",
-                      m->reason.c_str());
+                      m->state, enabled ? "yes" : "no", m->reason.c_str());
         });
+
+    // /motor_command: joint-side targets + gains from qmini_controllers. Stored
+    // per-slot and converted to motor-side in the poll thread (fill_command).
+    cmd_sub_ = create_subscription<qmini_msgs::msg::MotorCommand>(
+        "motor_command", rclcpp::QoS(rclcpp::KeepLast(1)).reliable(),
+        std::bind(&MotorBusNode::on_motor_command, this, std::placeholders::_1));
 
     joint_state_pub_ = create_publisher<sensor_msgs::msg::JointState>(
         "joint_states", rclcpp::SystemDefaultsQoS());
@@ -158,6 +195,16 @@ class MotorBusNode : public rclcpp::Node {
     RCLCPP_INFO(get_logger(),
                 "motor_bus_node up: %zu channels, %zu motors, /joint_states @ %.1f Hz.",
                 channels_.size(), motor_count(), pub_rate_hz);
+    if (torque_enabled_.load(std::memory_order_relaxed)) {
+      RCLCPP_WARN(get_logger(),
+                  "*** TORQUE ENABLED (gain_scale=%.2f) *** motors will be driven "
+                  "when MotionGate=ENABLED and the safety heartbeat is fresh.",
+                  gain_scale_);
+    } else {
+      RCLCPP_INFO(get_logger(),
+                  "Torque DISABLED (read-only). Set enable_motor_torque:=true to "
+                  "drive the motors.");
+    }
   }
 
   ~MotorBusNode() override {
@@ -181,11 +228,26 @@ class MotorBusNode : public rclcpp::Node {
   std::string ament_index_cpp_share_dir() {
     const char* prefix = std::getenv("AMENT_PREFIX_PATH");
     if (!prefix) return "src/qmini_hardware";  // dev fallback
-    // AMENT_PREFIX_PATH is colon-separated; the first entry is this overlay.
-    std::string p(prefix);
-    const auto colon = p.find(':');
-    if (colon != std::string::npos) p = p.substr(0, colon);
-    return p + "/share/qmini_hardware";
+    // AMENT_PREFIX_PATH is colon-separated and lists EVERY package's prefix, not
+    // just ours — the first entry is whichever package sourced last (often a
+    // different package). Scan for the entry that actually has our share dir.
+    std::string list(prefix);
+    size_t start = 0;
+    std::string first;  // remember the first entry as a last resort
+    while (start <= list.size()) {
+      const auto colon = list.find(':', start);
+      const std::string entry =
+          list.substr(start, colon == std::string::npos ? std::string::npos
+                                                        : colon - start);
+      if (!entry.empty()) {
+        if (first.empty()) first = entry;
+        const std::string cand = entry + "/share/qmini_hardware";
+        if (std::filesystem::exists(cand)) return cand;
+      }
+      if (colon == std::string::npos) break;
+      start = colon + 1;
+    }
+    return (first.empty() ? "src/qmini_hardware" : first) + "/share/qmini_hardware";
   }
 
   void load_layout(const std::string& path) {
@@ -227,15 +289,30 @@ class MotorBusNode : public rclcpp::Node {
                        slot->ratio, slot->joint.c_str());
           throw std::runtime_error("Bad gear_ratio in motor_layout.yaml.");
         }
+        // Per-joint rotation direction (+1/-1): +1 if the motor's positive
+        // rotation matches the URDF joint axis, -1 if it's inverted. Offsets
+        // alone can't fix an inverted joint (see docs). Default +1.
+        slot->direction = mn["direction"].as<double>(1.0);
+        if (slot->direction != 1.0 && slot->direction != -1.0) {
+          RCLCPP_FATAL(get_logger(), "direction for %s must be +1 or -1 (got %.3f).",
+                       slot->joint.c_str(), slot->direction);
+          throw std::runtime_error("Bad direction in motor_layout.yaml.");
+        }
         ch.motors.push_back(std::move(slot));
       }
     }
   }
 
-  // Resolve the offsets-file path: explicit param, else the share-dir default.
+  // Resolve the offsets-file path: explicit param, else next to the layout file
+  // (the launch passes layout_file with the correct share dir), else share-dir.
   std::string resolve_offsets_path() {
     auto p = get_parameter("offsets_file").as_string();
     if (!p.empty()) return p;
+    auto layout = get_parameter("layout_file").as_string();
+    if (!layout.empty()) {
+      return (std::filesystem::path(layout).parent_path() /
+              "joint_offsets.yaml").string();
+    }
     return ament_index_cpp_share_dir() + "/config/joint_offsets.yaml";
   }
 
@@ -334,6 +411,75 @@ class MotorBusNode : public rclcpp::Node {
   // Per-channel polling. All M1 commands are zero — motor freewheels but
   // reports state. Future milestones swap in real commands gated by the
   // motion_enabled_ flag.
+  // Store an incoming joint-side command into the matching motor slots. Arrays
+  // are in canonical kJointOrder; map each index to its (channel, motor).
+  void on_motor_command(const qmini_msgs::msg::MotorCommand::SharedPtr m) {
+    const int64_t t = now().nanoseconds();
+    for (size_t i = 0; i < kJointOrder.size(); ++i) {
+      auto it = joint_to_chan_motor_.find(kJointOrder[i]);
+      if (it == joint_to_chan_motor_.end()) continue;
+      auto& slot = *channels_[it->second.first].motors[it->second.second];
+      // NaN in a field means "use default"; here that's 0 (no ff) — clamp NaNs.
+      auto nz = [](double v) { return std::isnan(v) ? 0.0 : v; };
+      slot.cmd_q.store(nz(m->q_des[i]), std::memory_order_relaxed);
+      slot.cmd_dq.store(nz(m->dq_des[i]), std::memory_order_relaxed);
+      slot.cmd_tau.store(nz(m->tau_ff[i]), std::memory_order_relaxed);
+      slot.cmd_kp.store(nz(m->kp[i]), std::memory_order_relaxed);
+      slot.cmd_kd.store(nz(m->kd[i]), std::memory_order_relaxed);
+      slot.last_cmd_ns.store(t, std::memory_order_relaxed);
+      slot.has_command.store(true, std::memory_order_relaxed);
+    }
+  }
+
+  // Compute the motor-side MotorCmd for one slot, applying the safety policy and
+  // the joint-side -> motor-side conversion. Called every poll cycle.
+  //   ENABLED + fresh cmd        -> drive to commanded target/gains
+  //   SOFT_STOPPED / stale cmd   -> hold last commanded position under PD
+  //   HARD_STOPPED / BOOTING /
+  //     stale heartbeat / no cmd -> zero torque (kp=kd=tau=0)
+  void fill_command(MotorSlot& slot, int64_t now_ns, MotorCmd& cmd) {
+    using G = qmini_msgs::msg::MotionGate;
+    const double ratio = slot.ratio;
+    const double s = slot.direction;
+    const double offset = slot.offset.load(std::memory_order_relaxed);
+
+    double q_j = 0.0, dq_j = 0.0, tau_j = 0.0, kp_j = 0.0, kd_j = 0.0;
+
+    const bool hb_ok =
+        (now_ns - last_hb_ns_.load(std::memory_order_relaxed)) < hb_timeout_ns_;
+    const uint8_t gate = gate_state_.load(std::memory_order_relaxed);
+    const bool has_cmd = slot.has_command.load(std::memory_order_relaxed);
+    const bool cmd_fresh =
+        has_cmd &&
+        (now_ns - slot.last_cmd_ns.load(std::memory_order_relaxed)) < cmd_timeout_ns_;
+
+    if (!torque_enabled_.load(std::memory_order_relaxed) || !hb_ok ||
+        gate == G::STATE_HARD_STOPPED || gate == G::STATE_BOOTING) {
+      // Zero torque: read-only mode, lost heartbeat, hard stop, or pre-boot.
+    } else if (gate == G::STATE_ENABLED && cmd_fresh) {
+      q_j = slot.cmd_q.load(std::memory_order_relaxed);
+      dq_j = slot.cmd_dq.load(std::memory_order_relaxed);
+      tau_j = slot.cmd_tau.load(std::memory_order_relaxed);
+      kp_j = slot.cmd_kp.load(std::memory_order_relaxed) * gain_scale_;
+      kd_j = slot.cmd_kd.load(std::memory_order_relaxed) * gain_scale_;
+    } else if (has_cmd) {
+      // SOFT_STOPPED, or ENABLED with a stale command: hold last position.
+      q_j = slot.cmd_q.load(std::memory_order_relaxed);
+      kp_j = slot.cmd_kp.load(std::memory_order_relaxed) * gain_scale_;
+      kd_j = slot.cmd_kd.load(std::memory_order_relaxed) * gain_scale_;
+    }
+    // else: nothing commanded yet -> leave everything zero (freewheel).
+
+    // joint-side -> motor-side, with direction sign on the signed quantities
+    // (position/velocity/torque). kp/kd are magnitudes (the error is already in
+    // motor frame), so they take no sign.
+    cmd.q = static_cast<float>(s * (q_j + offset) * ratio);
+    cmd.dq = static_cast<float>(s * dq_j * ratio);
+    cmd.tau = static_cast<float>(s * tau_j / ratio);
+    cmd.kp = static_cast<float>(kp_j / (ratio * ratio));
+    cmd.kd = static_cast<float>(kd_j / (ratio * ratio));
+  }
+
   void poll_loop(Channel& ch, double min_period_us, int absent_threshold,
                  double reprobe_period_s) {
     const size_t n = ch.motors.size();
@@ -366,6 +512,7 @@ class MotorBusNode : public rclcpp::Node {
 
     while (rclcpp::ok() && ch.running.load(std::memory_order_relaxed)) {
       const auto t0 = std::chrono::steady_clock::now();
+      const int64_t now_ns = now().nanoseconds();
 
       // Poll each motor independently so one silent motor neither blanks the
       // rest of the channel nor stalls the loop on every cycle.
@@ -374,6 +521,10 @@ class MotorBusNode : public rclcpp::Node {
         if (absent[i] && t0 < next_probe[i]) {
           continue;  // marked absent, not yet time to re-probe
         }
+
+        // Set this cycle's command (motor-side) per the safety policy. In
+        // read-only mode / unsafe states this leaves kp=kd=tau=0 (pure read).
+        fill_command(slot, now_ns, cmds[i]);
 
         const bool ok = ch.serial->sendRecv(&cmds[i], &datas[i]) &&
                         datas[i].correct;
@@ -439,10 +590,11 @@ class MotorBusNode : public rclcpp::Node {
         continue;
       }
       const double ratio = slot.ratio;
+      const double s = slot.direction;
       const double offset = slot.offset.load(std::memory_order_relaxed);
-      msg.position.push_back(snapshot.q / ratio - offset);
-      msg.velocity.push_back(snapshot.dq / ratio);
-      msg.effort.push_back(snapshot.tau * ratio);
+      msg.position.push_back(s * (snapshot.q / ratio) - offset);
+      msg.velocity.push_back(s * (snapshot.dq / ratio));
+      msg.effort.push_back(s * (snapshot.tau * ratio));
     }
     joint_state_pub_->publish(msg);
   }
@@ -464,7 +616,9 @@ class MotorBusNode : public rclcpp::Node {
           fresh = m->has_fresh.load(std::memory_order_relaxed);
         }
         if (fresh && snap.correct) {
-          m->offset.store(snap.q / m->ratio, std::memory_order_relaxed);
+          // offset = dir*(motor_q/ratio) so joint_q reads 0 here at the jig pose.
+          m->offset.store(m->direction * (snap.q / m->ratio),
+                          std::memory_order_relaxed);
           captured.push_back(m->joint);
         } else {
           missing.push_back(m->joint);
@@ -522,9 +676,18 @@ class MotorBusNode : public rclcpp::Node {
 
   std::atomic<int64_t> last_hb_ns_{0};
   std::atomic<bool> motion_enabled_{false};
+  std::atomic<uint8_t> gate_state_{qmini_msgs::msg::MotionGate::STATE_BOOTING};
+
+  // M2.2 command path. torque_enabled_ + the timeouts/scale are set once in the
+  // constructor before the poll threads start, then read-only.
+  std::atomic<bool> torque_enabled_{false};
+  double gain_scale_{1.0};
+  int64_t hb_timeout_ns_{100000000};   // 0.1 s
+  int64_t cmd_timeout_ns_{200000000};  // 0.2 s
 
   rclcpp::Subscription<qmini_msgs::msg::SafetyHeartbeat>::SharedPtr hb_sub_;
   rclcpp::Subscription<qmini_msgs::msg::MotionGate>::SharedPtr gate_sub_;
+  rclcpp::Subscription<qmini_msgs::msg::MotorCommand>::SharedPtr cmd_sub_;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr capture_srv_;
   rclcpp::TimerBase::SharedPtr publish_timer_;
