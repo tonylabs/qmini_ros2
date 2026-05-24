@@ -1,0 +1,52 @@
+# Qmini controller config: joint-side PD gains + per-joint position limits.
+#
+# === GAINS ===
+# kp/kd are JOINT-SIDE, copied VERBATIM from the authoritative Isaac Lab source:
+#   qmini_isaaclab/source/Qmini/robots/qmini.py
+#     DelayedPDActuatorCfg.stiffness (kp) and .damping (kd)
+# The GO-M8010-6 closes its PD loop in firmware; this node forwards these gains
+# in qmini_msgs/MotorCommand and qmini_hardware converts them to motor-side
+# (motor_kp = joint_kp / ratio^2, etc.) at the command boundary. So the values
+# here stay joint-side and reviewable against qmini.py. If qmini.py changes,
+# change these to match (never the reverse).
+gains:
+  kp:
+    hip_yaw_l:      55.0
+    hip_roll_l:    105.0
+    hip_pitch_l:    75.0
+    knee_pitch_l:   45.0
+    ankle_pitch_l:  30.0
+    hip_yaw_r:      55.0
+    hip_roll_r:    105.0
+    hip_pitch_r:    75.0
+    knee_pitch_r:   45.0
+    ankle_pitch_r:  30.0
+  kd:
+    hip_yaw_l:       0.3
+    hip_roll_l:      2.5
+    hip_pitch_l:     0.3
+    knee_pitch_l:    0.5
+    ankle_pitch_l:   0.25
+    hip_yaw_r:       0.3
+    hip_roll_r:      2.5
+    hip_pitch_r:     0.3
+    knee_pitch_r:    0.5
+    ankle_pitch_r:   0.25
+
+# === POSITION LIMITS [rad, joint-side] ===
+# Hard clamp applied to every commanded q_des before it leaves this node — the
+# last line of defense before a target reaches the motors. Mirrored left/right.
+# These are conservative software limits; validate against true mechanical
+# travel during M2.3 (see note re: hip_roll real ~15deg travel) and tighten if
+# a limit exceeds the physical stop.
+position_limits:
+  hip_yaw_l:     [-0.1, 0.7]
+  hip_roll_l:    [-0.3, 0.6]
+  hip_pitch_l:   [-2.1, 0.0]
+  knee_pitch_l:  [ 0.0, 2.1]
+  ankle_pitch_l: [-2.5, 0.0]
+  hip_yaw_r:     [-0.7, 0.1]
+  hip_roll_r:    [-0.6, 0.3]
+  hip_pitch_r:   [ 0.0, 2.1]
+  knee_pitch_r:  [-2.1, 0.0]
+  ankle_pitch_r: [ 0.0, 2.5]

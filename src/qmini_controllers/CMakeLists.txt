@@ -12,13 +12,14 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(qmini_msgs REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
-# Node lands in M2.
-# add_executable(pd_packer_node src/pd_packer_node.cpp)
-# ament_target_dependencies(pd_packer_node rclcpp sensor_msgs qmini_msgs)
-# install(TARGETS pd_packer_node DESTINATION lib/${PROJECT_NAME})
+add_executable(pd_packer_node src/pd_packer_node.cpp)
+ament_target_dependencies(pd_packer_node rclcpp sensor_msgs qmini_msgs)
+target_link_libraries(pd_packer_node yaml-cpp)
+install(TARGETS pd_packer_node DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY config DESTINATION share/${PROJECT_NAME} OPTIONAL)
+install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
