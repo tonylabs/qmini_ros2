@@ -4,13 +4,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-This repository is in the **planning / greenfield** stage. At time of writing, the tree contains only `README.md`; there is no `src/`, no ROS 2 package, no ONNX policy file checked in, and no build system yet. Treat the architecture below as the intended design — when adding code, create the packages described here rather than inventing a different layout.
+The workspace is **scaffolded and the M1–M2 hardware-bring-up path is implemented and validated on the real robot.** As of 2026-05-25 the realtime motor bus (`qmini_hardware`), the PD command packer (`qmini_controllers`), and the safety/deadman node (`qmini_safety`) exist and run; homing and per-joint direction are calibrated for this physical robot. The policy runner (`qmini_rl`), IMU driver (`qmini_imu`), joystick parser (`qmini_joystick`), and calibration package (`qmini_calibration`) are still scaffold-only. The architecture below remains the spec — when adding code, fill in the packages as described rather than inventing a different layout. See the **Task List** below for per-milestone status.
 
 ## Target platform
 
 - **Runtime host:** Raspberry Pi 5, Ubuntu 24.04, 4 GB RAM. Memory and CPU are tight — prefer C++ for the realtime control loop and ONNX inference path. Reserve Python for launch files, configuration, and offline tooling.
 - **ROS 2 distribution:** Jazzy Jalisco (the matching distro for Ubuntu 24.04).
 - **Workspace layout:** standard colcon workspace — packages live under `src/`, built into `build/`, `install/`, `log/` (all should be gitignored once they exist).
+
+## Task List
+
+Milestone status as of **2026-05-25**. Legend: ✅ done · 🔄 in progress · ⬜ not started.
+Each stage's operator guide lives in `docs/` (numbered to match the bring-up order).
+
+| # | Milestone | Status | What it covers / package(s) | Guide |
+|---|---|---|---|---|
+| **M0** | Workspace scaffolding | ✅ | colcon workspace, 10 package skeletons, URDF in `qmini_description`, custom msgs in `qmini_msgs` (`MotorCommand`, …), gitignore for build artifacts | — |
+| **M1** | Motor bus driver + smoke test | ✅ | `qmini_hardware/motor_bus_node` — 4-channel RS-485, per-channel polling, publishes `/joint_states` (read-only, no torque). Gear ratios incl. hip-roll 18.99 | `docs/1-SMOKE_TEST.md` |
+| **M2.0** | Homing (joint zeros) | ✅ | Capture per-joint offsets at the jig pose into `qmini_hardware/config/joint_offsets.yaml`. GO-M8010-6 zeros at power-up → pose jig first | `docs/2-HOMING.md` |
+| **M2.1** | PD command packer | ✅ | `qmini_controllers/pd_packer_node` — joint-side gains/limits from Isaac Lab, ease-out ramp, deadman-gated, publishes `/motor_command` (no torque yet) | `docs/4-CONTROLLER_TEST.md` |
+| **M2.2** | Hardware command path | ✅ | `qmini_hardware` consumes `/motor_command`: safety gating + offset/ratio/direction conversion + `kp/kd÷ratio²`. Torque opt-in, off by default | `docs/4-CONTROLLER_TEST.md` |
+| **M2.3** | First energize → drive to home | 🔄 | Drive to the home crouch under torque, deadman + heartbeat gated. **Direction check done** (both hip-rolls were inverted → `direction:-1`, re-homed; hip-yaws OK). **Pending: full-gain energize run on hardware** | `docs/5-ENERGIZE.md` |
+| **M3** | Teleop / joystick | 🔄 | `joy_node` + `qmini_safety/safety_node` deadman + `/joy` watchdog **work**. **Not done:** dedicated `qmini_joystick` parser node (vx/vy/wz, modes, battery, requested-stop events → `MotionGate`/`SafetyHeartbeat` inputs) | `docs/3-JOYSTICK.md` |
+| **M4** | Calibration | ⬜ | `qmini_calibration` (scaffold only): measure IMU noise/mount, bus jitter, actuator latency, effective PD, friction, base mass → diff against Isaac Lab DR ranges | — |
+| **M5** | Policy runner | ⬜ | `qmini_rl` (scaffold only): ONNX Runtime C++ loads the Isaac-Lab policy, assembles the 44-dim observation (incl. on-robot `gait_phase_sincos` + `static_flag`), publishes `/joint_target` at 50 Hz. Depends on `qmini_imu` | — |
+| **—** | IMU driver | ⬜ | `qmini_imu` (scaffold only): Wheeltek N100 → `sensor_msgs/Imu`. Blocks M5 observations | — |
+| **M6** | Standing / walking (unsupported) | ⬜ | Full system under teleop with the M6-only safety rules (5% velocity ramp, 3-step cutoff, two-person, battery preconditions). Gated on better fall protection than low-platform-+-human-catch | — |
+
+**Immediate next action:** complete the M2.3 full-gain energize run (`docs/5-ENERGIZE.md` Step 2), confirm the feet splay correctly at the home pose, then M2 is closed. After that the natural path is the **`qmini_imu` driver → M4 calibration → M5 policy runner**.
 
 ## Hardware topology
 
