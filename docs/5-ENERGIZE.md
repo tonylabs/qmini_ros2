@@ -9,6 +9,27 @@ crouch, gated by the deadman + safety heartbeat.
 > it does not hold itself upright. The rope is the only fall protection. It does
 > not come off until M6 (and even then: low platform + human catch).
 
+### Home-pose hold is NOT standing — expect it to fall
+
+Holding the home pose under PD will **not** make the robot stand on its own; left
+unsupported it tips over (typically **forward**, since the crouch's CoM sits ahead
+of the feet). **This is expected, not a bug, and you must not try to fix it by
+re-tuning the home pose** — those angles are copied from Isaac Lab and changing
+them invalidates the trained policy.
+
+A static joint-angle hold has no feedback loop: nothing reads the IMU and corrects.
+Robust standing is a **closed-loop behavior** — the RL policy reads IMU + joint
+state and adjusts joint targets every ~20 ms (50 Hz), actively keeping the CoM over
+the feet, even in standing mode. That arrives with **M5 (`qmini_rl`)**, the ONNX
+policy runner publishing `/joint_target`. (For reference, the `qmini_official_rl`
+deployment that stood robustly did exactly this — see `rl_controller.cpp` in
+`qmini_official_sdk`, running the ONNX policy in a loop.)
+
+So M2.3's purpose is narrow: confirm torque flows, the safety gating works, joint
+**directions** are correct, and the ramp is smooth — all on the rope. The home pose
+here is just the **nominal pose the policy will output deltas around**
+(`q_des = home + 0.5 × policy_output`), not a balance controller.
+
 ## Prerequisites
 
 - **M2.0 homing valid** for this power session (see [2-HOMING.md](2-HOMING.md)).
