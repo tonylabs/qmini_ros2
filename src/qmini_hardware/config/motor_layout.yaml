@@ -39,8 +39,12 @@ channels:
     port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTA98W5B-if01-port0
     baud_rate: 4000000
     motors:
-      - { joint: hip_roll_l, id: 0, gear_ratio: 18.99 }
-      - { joint: hip_roll_r, id: 1, gear_ratio: 18.99 }
+      # direction: -1 — both hip-roll motors spin opposite the URDF/Isaac-Lab
+      # convention (verified 2026-05-25 via URDF-viewer vs real-robot abduction
+      # check: viewer abducts +/-, real robot abducts -/+). Without this the
+      # home pose drives the feet INWARD (converging) instead of splaying out.
+      - { joint: hip_roll_l, id: 0, gear_ratio: 18.99, direction: -1 }
+      - { joint: hip_roll_r, id: 1, gear_ratio: 18.99, direction: -1 }
 
   - name: left_lower_bus
     port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTA98W5B-if02-port0

@@ -53,11 +53,9 @@ So confirm directions first, with **no torque**.
 
 ```bash
 # build the description packages once if you haven't:
-colcon build --symlink-install \
-  --packages-select qmini_msgs qmini_description qmini_bringup \
+colcon build --symlink-install --packages-select qmini_msgs qmini_description qmini_bringup \
   --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3 -DPYTHON_EXECUTABLE=/usr/bin/python3
 source install/setup.bash
-
 ros2 launch qmini_bringup view_robot.launch.py
 ```
 
@@ -95,21 +93,51 @@ Hand-abduct the left leg (foot outward) and read `hip_roll_l`:
 - Signs **disagree** → that joint is inverted, and that's why the feet converge
   under power.
 
-Do the same for `hip_yaw_l` and the right-leg mirror.
+> **Mirror trap:** left and right are mirrored (`hip_roll_l` home −0.1,
+> `hip_roll_r` home +0.1), so abduction has **opposite** signs between the two
+> legs. That is expected — it is NOT an inversion. A joint is inverted only when
+> the **viewer and the real robot disagree for the *same* leg**, never because
+> left and right differ from each other.
+
+Do the same for `hip_yaw_l` / `hip_yaw_r` (rotate the leg about the vertical
+axis — toe-in vs toe-out). The pitch joints (hip_pitch / knee / ankle) were
+already validated by the 90°→1.57 rad check during homing, so they don't need
+re-checking here.
+
+### Results for this robot (record what you find)
+
+Fill one row per lateral joint. "Inverted?" is **yes only when the two sign
+columns disagree**.
+
+| Joint | Viewer: abduct/yaw-out → sign | Real robot: same motion → sign | Inverted? → `direction` |
+|---|---|---|---|
+| `hip_roll_l` | + (0 → +0.300) | − (+0.8 → 0) | **yes → -1** |
+| `hip_roll_r` | − (0 → −0.300) | + (−0.9 → 0) | **yes → -1** |
+| `hip_yaw_l`  | − (0.7 → −0.1) | − (0.8 → 0) | no → +1 |
+| `hip_yaw_r`  | + (−0.7 → 0.1) | + (−0.8 → 0) | no → +1 |
+
+_(Verified 2026-05-25: both hip-rolls inverted — `direction: -1` set in
+`motor_layout.yaml`; both hip-yaws agree with the URDF and stay `+1`. The
+hip-roll inversion is why the feet converged at the home pose.)_
 
 ### Fix an inverted joint
 
 Set `direction: -1` for that joint in
-`src/qmini_hardware/config/motor_layout.yaml` (alongside `gear_ratio`), then:
+`src/qmini_hardware/config/motor_layout.yaml` (alongside `gear_ratio`). Then:
 
-```bash
-colcon build --symlink-install --packages-select qmini_hardware \
-  --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3 -DPYTHON_EXECUTABLE=/usr/bin/python3
-```
+1. **Relaunch — no rebuild.** `motor_layout.yaml` is already symlink-installed
+   and the node reads it at startup, so a content-only edit needs **no
+   `colcon build`** — just kill and relaunch the motor bus node so it re-reads
+   the file. (Rebuild is only needed when you add a *new* file.)
+2. **Re-home.** The offset is captured as `offset = direction × (motor_q /
+   ratio)`, so flipping `direction` flips that joint's stored offset sign — the
+   existing `joint_offsets.yaml` value is now wrong for it. Return the robot to
+   the jig pose and re-run the capture (see [2-HOMING.md](2-HOMING.md)). The
+   joints left at `+1` recapture to the same values; the flipped ones change
+   sign. (No power-cycle needed if power stayed on since the last homing; if you
+   power-cycled, re-pose the jig **before** power-up as usual.)
 
-**Re-home** afterward — the offset sign changes with direction (see
-[2-HOMING.md](2-HOMING.md)). Joints left at `+1` (default) are unaffected. Re-run
-the comparison until every joint matches the URDF.
+Re-run the comparison until every joint matches the URDF.
 
 ---
 

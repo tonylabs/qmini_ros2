@@ -2,13 +2,13 @@
 # all-joints-zero jig pose via ~/capture_home_offsets.
 #   joint_q = motor_q / gear_ratio - offset
 offsets:
-  hip_yaw_l: 0.178995
-  hip_roll_l: 0.190526
-  hip_pitch_l: 0.211529
-  knee_pitch_l: 0.613927
-  ankle_pitch_l: 0.711346
-  hip_yaw_r: 0.278413
-  hip_roll_r: 0.308190
-  hip_pitch_r: 0.632072
-  knee_pitch_r: 0.243002
-  ankle_pitch_r: 0.135344
+  hip_yaw_l: 0.178632
+  hip_roll_l: -0.172028
+  hip_pitch_l: 0.219798
+  knee_pitch_l: 0.615199
+  ankle_pitch_l: 0.710619
+  hip_yaw_r: 0.277838
+  hip_roll_r: -0.296710
+  hip_pitch_r: 0.631133
+  knee_pitch_r: 0.242911
+  ankle_pitch_r: 0.135556

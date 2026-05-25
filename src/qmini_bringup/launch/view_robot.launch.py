@@ -53,6 +53,12 @@ def generate_launch_description() -> LaunchDescription:
             name="joint_state_publisher_gui",
             output="screen",
             condition=IfCondition(LaunchConfiguration("use_joint_gui")),
+            # Detach from the X session manager. Qt's default ICE IO error
+            # handler calls exit() if the SESSION_MANAGER (ICE) connection
+            # hiccups, which was killing both GUIs ~5 s after start. Clearing
+            # SESSION_MANAGER skips the ICE connect entirely (we don't need
+            # session save/restore for a dev viewer).
+            additional_env={"SESSION_MANAGER": ""},
         ),
         Node(
             package="rviz2",
@@ -60,5 +66,6 @@ def generate_launch_description() -> LaunchDescription:
             name="rviz2",
             output="screen",
             arguments=["-d", rviz_config],
+            additional_env={"SESSION_MANAGER": ""},
         ),
     ])
