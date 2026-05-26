@@ -1,0 +1,16 @@
+# Qmini calibration results — the measured reality of THIS robot.
+#
+# One list per measurement; the offline analyzers APPEND rows (newest last),
+# they never rewrite existing rows. diff_against_isaaclab.py reads the latest
+# row of each and compares it to the Isaac Lab DR ranges (imported live from
+# qmini_isaaclab — single source of truth, never duplicated here).
+#
+# Do NOT commit rosbags (see data/.gitkeep); commit only the rows below.
+#
+# Measurements (M4 order):
+#   imu_noise_mount   — gyro/accel/proj-gravity noise + mount tilt   (step 2)
+#   bus_jitter        — per-channel polling rate + loop jitter        (step 3)
+#   actuator_latency  — USB->RS485 round-trip + effective PD          (step 4)
+#   friction          — ankle/floor static & kinetic friction         (step 5)
+#
+# (empty until the first analyzer run appends a row)

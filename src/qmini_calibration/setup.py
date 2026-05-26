@@ -1,3 +1,5 @@
+from glob import glob
+
 from setuptools import find_packages, setup
 
 package_name = "qmini_calibration"
@@ -9,6 +11,7 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
+        (f"share/{package_name}/launch", glob("launch/*.launch.py")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -19,9 +22,8 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            # Individual calibration nodes land per M4 measurement.
-            # "joint_zero_calib = qmini_calibration.joint_zero_calib:main",
-            # "imu_noise_calib = qmini_calibration.imu_noise_calib:main",
+            "imu_noise_calib = qmini_calibration.imu_noise_calib:main",
+            # More calibration nodes land per M4 measurement:
             # "actuator_latency_calib = qmini_calibration.actuator_latency_calib:main",
         ],
     },
