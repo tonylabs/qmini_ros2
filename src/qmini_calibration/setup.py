@@ -24,8 +24,7 @@ setup(
         "console_scripts": [
             "imu_noise_calib = qmini_calibration.imu_noise_calib:main",
             "bus_jitter_calib = qmini_calibration.bus_jitter_calib:main",
-            # More calibration nodes land per M4 measurement:
-            # "actuator_latency_calib = qmini_calibration.actuator_latency_calib:main",
+            "actuator_latency_calib = qmini_calibration.actuator_latency_calib:main",
         ],
     },
 )

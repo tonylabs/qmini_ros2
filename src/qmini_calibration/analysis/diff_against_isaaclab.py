@@ -98,6 +98,20 @@ def load_isaaclab_rate_refs():
             "policy_rate_hz": 1.0 / (sim_dt * decimation)}
 
 
+def load_isaaclab_actuator_refs():
+    """Return the actuator delay (DelayedPDActuatorCfg) + sim.dt, from the cfg."""
+    _ensure_isaac_app()
+    from Qmini.tasks.qmini_locomotion.qmini_env_cfg import QminiEnvCfg
+    cfg = QminiEnvCfg()
+    sim_dt = float(cfg.sim.dt)
+    max_delay = None
+    for act in cfg.scene.robot.actuators.values():
+        md = getattr(act, "max_delay", None)
+        if md is not None:
+            max_delay = md if max_delay is None else max(max_delay, int(md))
+    return {"sim_dt": sim_dt, "max_delay_steps": max_delay}
+
+
 def latest_row(results_path, key):
     with open(results_path) as f:
         data = yaml.safe_load(f) or {}
@@ -171,6 +185,36 @@ def main():
         bad = {c: f for c, f in nanfrac.items() if f > 0.01}
         print(f"  [{status(not bad)}] per-channel NaN fraction: "
               + (f"{bad} (channel(s) dropping samples)" if bad else "all channels clean"))
+
+    # ---- actuator latency + effective PD ----
+    act_row = latest_row(args.results, "actuator_latency")
+    if act_row is None:
+        print("\nactuator_latency: no rows yet — skipping.")
+    else:
+        refs = load_isaaclab_actuator_refs()
+        md = refs["max_delay_steps"]
+        trained_ms = md * refs["sim_dt"] * 1000.0 if md is not None else None
+        print(f"\nactuator_latency diff  (measured {act_row['date']} vs Isaac Lab)\n")
+        if trained_ms is not None:
+            print(f"  Isaac Lab DelayedPDActuatorCfg max_delay={md} steps "
+                  f"-> {trained_ms:.1f} ms (sim.dt={refs['sim_dt']})")
+        else:
+            print("  Isaac Lab actuator has no delay configured (max_delay unset/0).")
+        for j, d in act_row["per_joint"].items():
+            lat = d.get("latency_ms_mean")
+            if lat is not None and trained_ms is not None:
+                ok = lat <= trained_ms
+                print(f"  [{status(ok)}] {j}: latency {lat:.1f} ms (max {d.get('latency_ms_max')}) "
+                      f"<= trained delay {trained_ms:.1f} ms"
+                      + ("" if ok else "  -> WIDEN DelayedPDActuatorCfg max_delay + retrain"))
+            elif lat is not None:
+                print(f"  [{RED}RED  {RESET}] {j}: measured latency {lat:.1f} ms but sim delay "
+                      "is 0 -> set DelayedPDActuatorCfg max_delay to cover it + retrain")
+            kpc, kpe = d.get("kp_commanded"), d.get("kp_effective")
+            if kpe is not None and kpc:
+                ok = abs(kpe - kpc) <= 0.2 * abs(kpc)
+                print(f"  [{status(ok)}] {j}: effective kp {kpe:.1f} vs commanded {kpc:.1f} "
+                      f"({100*(kpe-kpc)/kpc:+.0f}%; firmware PD realizes the gain if within 20%)")
 
 
 if __name__ == "__main__":

@@ -75,6 +75,42 @@ polls). The diff imports `sim.dt` + `decimation` live and checks the bus sustain
 minimum `decimation`. The aggregated `/joint_states` can't expose true per-channel
 poll rates, so per-channel health is inferred from NaNs.
 
+## Step 4: actuator latency + effective PD
+
+**The first calibration that moves the robot under torque — run it ON THE ROPE,
+deadman held.** It publishes `/motor_command` directly (in place of `pd_packer`),
+so the step has a known shape and known kp/kd; `qmini_hardware` still gates torque
+on `enable_motor_torque` + `MotionGate==ENABLED` + a fresh heartbeat (release the
+deadman → motors freewheel and the protocol pauses).
+
+```bash
+# DRY RUN first (no torque — protocol + markers publish, motors freewheel):
+ros2 launch qmini_calibration actuator_latency_calib.launch.py
+
+# then for real, on the rope, holding the deadman; one joint at a time:
+ros2 launch qmini_calibration actuator_latency_calib.launch.py enable_torque:=true
+ros2 launch qmini_calibration actuator_latency_calib.launch.py enable_torque:=true \
+    test_joints:="['knee_pitch_l','hip_pitch_l']" gain_scale:=0.5 step_rad:=0.08
+
+# analyze + diff
+python3 src/qmini_calibration/analysis/analyze_actuator_bag.py \
+    src/qmini_calibration/data/<date>_actuator_latency/bag
+python3 src/qmini_calibration/analysis/diff_against_isaaclab.py   # isaac env
+```
+
+Holds all joints at the home pose and applies a small square-wave position step
+(`step_rad`) to each tested joint in turn, `n_steps` times. Measures, from the
+driver-stamped `/motor_command` + `/joint_states` (which carries q, dq, and
+**effort = measured torque**):
+
+- **round-trip latency** — command edge → first joint motion (`> pos_thresh`).
+  Compared against `DelayedPDActuatorCfg(max_delay)` (currently 0 → any real
+  latency is RED → widen `max_delay` and retrain).
+- **effective kp** — steady-state `mean(tau) / mean(q_des − q)` vs the commanded
+  kp (firmware PD realizes the gain if within ~20%).
+
+Start with `gain_scale:=0.5` and one joint; the rope is the only fall protection.
+
 ## Visualizing the results (MATLAB)
 
 The analyzers also export a **per-sample time series CSV** into the run dir
