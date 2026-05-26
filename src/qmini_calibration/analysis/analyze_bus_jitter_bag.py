@@ -98,6 +98,9 @@ def analyze(bag_dir):
     dropped = sum(1 for p in periods if p > 2 * med) if med > 0 else 0
     mean_p = _mean(periods)
 
+    # per-period time series for MATLAB/plotting (run dir = parent of the bag)
+    _write_periods_csv(os.path.dirname(os.path.normpath(bag_dir)), stamps, periods)
+
     ch_nan = {c: 0 for c in CHANNELS}
     for _, _, names, pos in window:
         bad = {c: False for c in CHANNELS}
@@ -124,6 +127,20 @@ def analyze(bag_dir):
         "dropped_ticks": dropped,
         "channel_nan_fraction": {c: round(ch_nan[c] / len(window), 4) for c in CHANNELS},
     }
+
+
+def _write_periods_csv(run_dir, stamps, periods):
+    """Per-period time series for MATLAB/plotting (analysis/matlab/plot_bus_jitter.m)."""
+    import csv
+    t0 = stamps[0]
+    path = os.path.join(run_dir, "periods.csv")
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["t_s", "period_ms"])
+        # period[i] is the gap ending at stamps[i+1]
+        for i, p in enumerate(periods):
+            w.writerow([stamps[i + 1] - t0, p])
+    print(f"Wrote per-period time series to {path}")
 
 
 def append_row(results_path, row):

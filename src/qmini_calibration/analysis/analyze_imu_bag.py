@@ -91,9 +91,13 @@ def analyze(bag_dir):
     if len(window) < 10:
         raise RuntimeError(f"Only {len(window)} IMU samples in the static window.")
 
+    pg_per_sample = [quat_rotate_inverse(*s[3], (0.0, 0.0, -1.0)) for s in window]
     gyro = list(zip(*[s[1] for s in window]))
     accel = list(zip(*[s[2] for s in window]))
-    projg = list(zip(*[quat_rotate_inverse(*s[3], (0.0, 0.0, -1.0)) for s in window]))
+    projg = list(zip(*pg_per_sample))
+
+    # per-sample time series for MATLAB/plotting (run dir = parent of the bag)
+    _write_samples_csv(os.path.dirname(os.path.normpath(bag_dir)), window, pg_per_sample)
 
     gyro_stats = [_stats(list(gyro[i])) for i in range(3)]
     accel_stats = [_stats(list(accel[i])) for i in range(3)]
@@ -120,6 +124,20 @@ def analyze(bag_dir):
         "proj_gravity_noise_std": [round(projg_stats[i][1], 5) for i in range(3)],
         "mount_tilt_from_vertical_deg": round(tilt, 3),
     }
+
+
+def _write_samples_csv(run_dir, window, pg_per_sample):
+    """Per-sample time series for MATLAB/plotting (analysis/matlab/plot_imu_noise.m)."""
+    import csv
+    t0 = window[0][0]
+    path = os.path.join(run_dir, "samples.csv")
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["t_s", "gx", "gy", "gz", "ax", "ay", "az", "pgx", "pgy", "pgz"])
+        for (t, g, a, _q), pg in zip(window, pg_per_sample):
+            w.writerow([(t - t0) * 1e-9, g[0], g[1], g[2], a[0], a[1], a[2],
+                        pg[0], pg[1], pg[2]])
+    print(f"Wrote per-sample time series to {path}")
 
 
 def append_row(results_path, row):

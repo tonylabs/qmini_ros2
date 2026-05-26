@@ -75,6 +75,28 @@ polls). The diff imports `sim.dt` + `decimation` live and checks the bus sustain
 minimum `decimation`. The aggregated `/joint_states` can't expose true per-channel
 poll rates, so per-channel health is inferred from NaNs.
 
+## Visualizing the results (MATLAB)
+
+The analyzers also export a **per-sample time series CSV** into the run dir
+(`samples.csv` for IMU, `periods.csv` for bus jitter) alongside the
+`calibration_results.yaml` row. MATLAB scripts in `analysis/matlab/` load those
+and plot — base MATLAB only, no toolboxes (or MATLAB ROS Toolbox) required:
+
+```matlab
+% IMU: time series, per-axis noise histograms, gyro Allan deviation,
+%      measured-noise-vs-DR bars (optional DR args overlay reference lines)
+plot_imu_noise('src/qmini_calibration/data/<date>_imu_noise/samples.csv', 0.35, 0.1)
+
+% Bus jitter: period-over-time (dropped ticks flagged) + period histogram
+plot_bus_jitter('src/qmini_calibration/data/<date>_bus_jitter/periods.csv', 50)
+```
+
+The CSVs are per-run artifacts under `data/` (gitignored, not committed). The
+plots are a visual sanity check; the authoritative green/red comparison is still
+`diff_against_isaaclab.py` (single source). The optional trailing args only draw
+reference lines — pass the numbers the diff prints (e.g. ang_vel DR 0.35 in obs
+units, proj-gravity DR 0.1; policy rate 50 Hz).
+
 ## Conventions
 
 - Bags live in `data/<YYYY-MM-DD>_<measurement>/` and are **not committed** (only
