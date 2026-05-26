@@ -1,0 +1,33 @@
+# qmini_rl policy runner parameters.
+#
+# Every value here mirrors the authoritative Isaac Lab repo (qmini_isaaclab).
+# If a number disagrees with the sim, change it HERE to match — never re-tune
+# the sim after training (that invalidates the policy).
+policy_runner_node:
+  ros__parameters:
+    # Filled in by the launch file (installed share path). Override to test a
+    # different export.
+    policy_path: ""
+    home_pose_file: ""
+
+    rate_hz: 50.0                      # = 1/(sim.dt*decimation) = 1/(0.005*4)
+    action_scale: 0.5                  # JointPositionActionCfg scale
+    gait_frequency_hz: 1.5             # gait_phase_sincos frequency
+    static_velocity_threshold: 0.15    # static_flag: 1.0 if ||cmd||2 < this
+
+    # per-term observation scales (ObservationsCfg.PolicyCfg)
+    ang_vel_scale: 0.2
+    joint_vel_scale: 0.05
+
+    # trained velocity_commands ranges — operator commands are clamped to these
+    vx_range: [-0.4, 0.7]
+    vy_range: [-0.4, 0.4]
+    wz_range: [-1.0, 1.0]
+
+    # only publish /joint_target while qmini_safety reports MotionGate=ENABLED.
+    # Set false for bench tests without the safety node running.
+    gate_required: true
+
+    # drop a control step (and don't publish) if IMU or joint_states is older
+    # than this — never feed the policy stale state.
+    input_timeout_s: 0.2

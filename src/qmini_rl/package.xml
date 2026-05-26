@@ -13,6 +13,7 @@
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>qmini_msgs</depend>
+  <depend>yaml-cpp</depend>
 
   <!-- ONNX Runtime is expected to be installed system-wide; not a ROS package. -->
   <!-- On Ubuntu 24.04 / Pi 5: download a prebuilt aarch64 release and place it -->
