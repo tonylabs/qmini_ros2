@@ -1,31 +1,54 @@
-# Qmini calibration results — the measured reality of THIS robot.
-#
-# One list per measurement; the offline analyzers APPEND rows (newest last),
-# they never rewrite existing rows. diff_against_isaaclab.py reads the latest
-# row of each and compares it to the Isaac Lab DR ranges (imported live from
-# qmini_isaaclab — single source of truth, never duplicated here).
-#
-# Do NOT commit rosbags (see data/.gitkeep); commit only the rows below.
-#
-# Measurements (M4 order):
-#   imu_noise_mount   — gyro/accel/proj-gravity noise + mount tilt   (step 2)
-#   bus_jitter        — per-channel polling rate + loop jitter        (step 3)
-#   actuator_latency  — USB->RS485 round-trip + effective PD          (step 4)
-#   friction          — ankle/floor static & kinetic friction         (step 5)
-#
-# IMU mount rotation (base_link <- sensor), determined 2026-05-26.
-# Quaternion [w,x,y,z]; set in qmini_imu/config/imu.yaml as mount_rotation.
-# Verified: makes imu_projected_gravity read (0,0,-1) upright. Matches the
-# official SDK's (-1,+1,-1) sign flip on x,z (= 180 deg about Y).
 imu_mount:
-  - date: 2026-05-26
-    rotation_wxyz: [0.0, 0.0, 1.0, 0.0]   # 180 deg about Y
-    equivalent_axis_signs: [-1, 1, -1]
-    isaac_lab_ref_rot_wxyz: [1.0, 0.0, 0.0, 0.0]   # ImuCfg expects identity rel base_link
-    note: >
-      The sim assumes the IMU frame == base_link (rot identity). On this robot the
-      N100 is physically mounted 180 deg about Y, so the driver rotates it back.
-      Position offset pos=(-0.04718,0.0663,0.11094) is a physical (tape/CAD)
-      measurement, not captured here.
+- date: 2026-05-26
+  rotation_wxyz:
+  - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+  equivalent_axis_signs:
+  - -1
+  - 1
+  - -1
+  isaac_lab_ref_rot_wxyz:
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+  note: 'The sim assumes the IMU frame == base_link (rot identity). On this robot
+    the N100 is physically mounted 180 deg about Y, so the driver rotates it back.
+    Position offset pos=(-0.04718,0.0663,0.11094) is a physical (tape/CAD) measurement,
+    not captured here.
 
-# (noise/jitter rows are appended by the analyzers from recorded bags)
+    '
+imu_noise_mount:
+- measurement: imu_noise_mount
+  date: '2026-05-27'
+  bag: bag
+  n_samples: 3000
+  rate_hz: 100.0
+  gyro_bias_rad_s:
+  - -0.032178
+  - -0.00204
+  - 0.030281
+  gyro_noise_std_rad_s:
+  - 0.000892
+  - 0.000781
+  - 0.000695
+  accel_mean_m_s2:
+  - -0.0548
+  - -0.6553
+  - 9.7664
+  accel_noise_std_m_s2:
+  - 0.0073
+  - 0.0073
+  - 0.007
+  gravity_magnitude_m_s2: 9.7885
+  proj_gravity_mean:
+  - 0.01245
+  - 0.14366
+  - -0.98954
+  proj_gravity_noise_std:
+  - 0.00054
+  - 0.00329
+  - 0.00048
+  mount_tilt_from_vertical_deg: 3.852
