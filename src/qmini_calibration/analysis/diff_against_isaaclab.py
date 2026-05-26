@@ -10,6 +10,12 @@ DR range and retrain before deployment.
     # in the isaac env, with qmini_isaaclab importable:
     python3 diff_against_isaaclab.py [--results <calibration_results.yaml>]
 
+Importing the env cfg pulls in Isaac Sim (omni/pxr), which only loads after the
+Isaac Sim app is started — so this script boots a HEADLESS AppLauncher first,
+exactly like scripts/rsl_rl/train.py. That makes it slow to start (the simulator
+boots) but keeps the DR ranges single-sourced from the cfg. Run with the isaac
+env's python.
+
 Covers the IMU noise/mount (M4 step 2) and bus-jitter (step 3) measurements.
 Add more measurements here as their rows land.
 """
@@ -23,15 +29,40 @@ import yaml
 
 GREEN, RED, RESET = "\033[32m", "\033[31m", "\033[0m"
 
+_SIM_APP = None
+
+
+def _ensure_isaac_app():
+    """Boot a headless Isaac Sim app once, so the env cfg (omni/pxr) can import."""
+    global _SIM_APP
+    if _SIM_APP is not None:
+        return
+    try:
+        from isaaclab.app import AppLauncher
+    except Exception as e:  # noqa: BLE001
+        sys.exit(
+            "Could not import isaaclab.app.AppLauncher — run this with the isaac "
+            f"env's python (the same one that runs train.py).\n  ({type(e).__name__}: {e})")
+    print("Booting headless Isaac Sim to read the cfg (this takes a moment)...")
+    _SIM_APP = AppLauncher(headless=True).app
+
+
+def _close_isaac_app():
+    global _SIM_APP
+    if _SIM_APP is not None:
+        _SIM_APP.close()
+        _SIM_APP = None
+
 
 def load_isaaclab_imu_refs():
     """Return the IMU-related ranges, read live from the Qmini cfg."""
+    _ensure_isaac_app()
     try:
         from Qmini.tasks.qmini_locomotion.qmini_env_cfg import QminiEnvCfg
     except Exception as e:  # noqa: BLE001
         sys.exit(
-            "Could not import qmini_isaaclab's QminiEnvCfg — run this in the isaac "
-            f"env with the Qmini package on PYTHONPATH.\n  ({type(e).__name__}: {e})")
+            "Could not import qmini_isaaclab's QminiEnvCfg — is the Qmini package "
+            f"on PYTHONPATH in this isaac env?\n  ({type(e).__name__}: {e})")
 
     cfg = QminiEnvCfg()
     policy = cfg.observations.policy
@@ -58,12 +89,8 @@ def load_isaaclab_imu_refs():
 
 def load_isaaclab_rate_refs():
     """Return sim.dt + decimation -> policy rate, read live from the Qmini cfg."""
-    try:
-        from Qmini.tasks.qmini_locomotion.qmini_env_cfg import QminiEnvCfg
-    except Exception as e:  # noqa: BLE001
-        sys.exit(
-            "Could not import qmini_isaaclab's QminiEnvCfg — run this in the isaac env.\n"
-            f"  ({type(e).__name__}: {e})")
+    _ensure_isaac_app()
+    from Qmini.tasks.qmini_locomotion.qmini_env_cfg import QminiEnvCfg
     cfg = QminiEnvCfg()
     sim_dt = float(cfg.sim.dt)
     decimation = int(cfg.decimation)
@@ -147,4 +174,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        _close_isaac_app()

@@ -29,10 +29,11 @@ Isaac Lab cfg (imported live — single source of truth).
 ros2 launch qmini_calibration imu_noise_calib.launch.py duration_s:=30.0
 
 # then append the canonical row from the recorded bag (ROS 2 sourced):
-python3 src/qmini_calibration/analysis/analyze_imu_bag.py \
-    src/qmini_calibration/data/<date>_imu_noise/bag
+python3 src/qmini_calibration/analysis/analyze_imu_bag.py src/qmini_calibration/data/<date>_imu_noise/bag
 
-# green/red vs Isaac Lab (in the isaac env, qmini_isaaclab importable):
+# green/red vs Isaac Lab — run with the isaac env's python (same one as
+# train.py). It boots a headless Isaac Sim to import the cfg, so it's slow to
+# start; that keeps the DR ranges single-sourced from the cfg.
 python3 src/qmini_calibration/analysis/diff_against_isaaclab.py
 ```
 
