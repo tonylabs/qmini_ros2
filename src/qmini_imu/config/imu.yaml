@@ -1,0 +1,25 @@
+# Wheeltec N100 IMU driver parameters.
+#
+# This robot's N100 is a CP2102 USB-to-UART bridge (serial "0001"). The by-id
+# path below is stable across reboots, unlike /dev/ttyUSB*. Once the udev rule
+# in qmini_hardware/config/udev/99-qmini.rules is installed it also appears as
+# the shorter alias /dev/qmini_imu — switch serial_port to that if you prefer.
+# Re-discover with:  ls -la /dev/serial/by-id/
+imu_driver_node:
+  ros__parameters:
+    serial_port: /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0
+    baud_rate: 921600          # N100 stock firmware default
+    frame_id: imu_link
+    imu_topic: imu/data
+
+    # device_type==1 equivalent: rotate the AHRS quaternion into a ROS-standard
+    # frame. Leave true for sane RViz output. M4 calibration verifies this maps
+    # onto the Isaac Lab base_link mount (pos=(-0.04718,0.0663,0.11094),
+    # rot=(1,0,0,0)); adjust the on-robot transform there, not the policy.
+    apply_ros_transform: true
+
+    # Covariance diagonals — placeholders until M4 measures the real noise floor
+    # (Isaac Lab trains with Unoise +/-0.35 on ang_vel, +/-0.1 on proj-gravity).
+    gyro_covariance: 0.01
+    accel_covariance: 0.05
+    orientation_covariance: 0.01
