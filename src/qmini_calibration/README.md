@@ -53,6 +53,26 @@ measurement (tape/CAD), not derivable from the IMU. The tilt check needs the bas
 actually leveled; a persistent tilt means either the driver's `apply_ros_transform`
 or a real mount-frame offset must be applied in the on-robot transform.
 
+## Step 3: bus polling rate + loop jitter
+
+Run **on the Pi 5** (the target host — bus rate/jitter is host-specific). Brings
+up the motor bus read-only (no torque); the robot does not move.
+
+```bash
+ros2 launch qmini_calibration bus_jitter_calib.launch.py duration_s:=30.0
+
+python3 src/qmini_calibration/analysis/analyze_bus_jitter_bag.py \
+    src/qmini_calibration/data/<date>_bus_jitter/bag
+python3 src/qmini_calibration/analysis/diff_against_isaaclab.py   # isaac env
+```
+
+Measures the driver-stamped `/joint_states` publish period (mean rate, jitter
+std, p95/p99, dropped ticks) and per-channel NaN fraction (channel-down / failed
+polls). The diff imports `sim.dt` + `decimation` live and checks the bus sustains
+≥ the policy rate (`1/(sim.dt·decimation)`) with margin, and reports the implied
+minimum `decimation`. The aggregated `/joint_states` can't expose true per-channel
+poll rates, so per-channel health is inferred from NaNs.
+
 ## Conventions
 
 - Bags live in `data/<YYYY-MM-DD>_<measurement>/` and are **not committed** (only

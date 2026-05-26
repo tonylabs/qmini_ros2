@@ -10,8 +10,8 @@ DR range and retrain before deployment.
     # in the isaac env, with qmini_isaaclab importable:
     python3 diff_against_isaaclab.py [--results <calibration_results.yaml>]
 
-Currently covers the IMU noise/mount measurement (M4 step 2). Add more
-measurements here as their rows land.
+Covers the IMU noise/mount (M4 step 2) and bus-jitter (step 3) measurements.
+Add more measurements here as their rows land.
 """
 
 import argparse
@@ -56,13 +56,26 @@ def load_isaaclab_imu_refs():
     return refs
 
 
-def latest_row(results_path, key="imu_noise_mount"):
+def load_isaaclab_rate_refs():
+    """Return sim.dt + decimation -> policy rate, read live from the Qmini cfg."""
+    try:
+        from Qmini.tasks.qmini_locomotion.qmini_env_cfg import QminiEnvCfg
+    except Exception as e:  # noqa: BLE001
+        sys.exit(
+            "Could not import qmini_isaaclab's QminiEnvCfg — run this in the isaac env.\n"
+            f"  ({type(e).__name__}: {e})")
+    cfg = QminiEnvCfg()
+    sim_dt = float(cfg.sim.dt)
+    decimation = int(cfg.decimation)
+    return {"sim_dt": sim_dt, "decimation": decimation,
+            "policy_rate_hz": 1.0 / (sim_dt * decimation)}
+
+
+def latest_row(results_path, key):
     with open(results_path) as f:
         data = yaml.safe_load(f) or {}
     rows = data.get(key, [])
-    if not rows:
-        sys.exit(f"No '{key}' rows in {results_path} — run the measurement + analyzer first.")
-    return rows[-1]
+    return rows[-1] if rows else None
 
 
 def status(ok):
@@ -76,38 +89,61 @@ def main():
     ap.add_argument("--results", default=default_results)
     args = ap.parse_args()
 
-    refs = load_isaaclab_imu_refs()
-    row = latest_row(args.results)
+    # ---- IMU noise/mount ----
+    imu_row = latest_row(args.results, "imu_noise_mount")
+    if imu_row is None:
+        print("imu_noise_mount: no rows yet — skipping.\n")
+    else:
+        refs = load_isaaclab_imu_refs()
+        print(f"IMU noise/mount diff  (measured {imu_row['date']} vs Isaac Lab)\n")
+        scale = refs.get("ang_vel_scale", 0.2)
+        meas = max(imu_row["gyro_noise_std_rad_s"]) * scale
+        ref = refs.get("ang_vel_noise")
+        if ref is not None:
+            print(f"  [{status(meas <= ref)}] ang_vel noise (obs units): measured "
+                  f"{meas:.4f} <= DR +/-{ref:.3f}  (raw std * scale {scale})")
+        meas_pg = max(imu_row["proj_gravity_noise_std"])
+        ref_pg = refs.get("proj_gravity_noise")
+        if ref_pg is not None:
+            print(f"  [{status(meas_pg <= ref_pg)}] proj-gravity noise: measured "
+                  f"{meas_pg:.4f} <= DR +/-{ref_pg:.3f}")
+        rot = refs["mount_rot_wxyz"]
+        tilt = imu_row.get("mount_tilt_from_vertical_deg", float("nan"))
+        identity = max(abs(rot[1]), abs(rot[2]), abs(rot[3])) < 1e-6
+        print(f"\n  IMU mount (Isaac Lab): pos={refs['mount_pos']}, rot(wxyz)={rot}"
+              f"{' [identity]' if identity else ''}")
+        print(f"  measured mount tilt from vertical: {tilt:.2f} deg (base must be "
+              "level; large tilt => fix in the on-robot transform)")
+        print("  Position offset must be measured physically (tape/CAD), not from the IMU.\n")
 
-    print(f"IMU noise/mount diff  (measured {row['date']} vs Isaac Lab)\n")
-
-    # gyro noise: compare in OBSERVATION units (raw std * obs scale) to the DR range
-    scale = refs.get("ang_vel_scale", 0.2)
-    meas = max(row["gyro_noise_std_rad_s"]) * scale
-    ref = refs.get("ang_vel_noise")
-    if ref is not None:
-        ok = meas <= ref
-        print(f"  [{status(ok)}] ang_vel noise (obs units): measured {meas:.4f} "
-              f"<= DR +/-{ref:.3f}  (raw std * scale {scale})")
-
-    meas_pg = max(row["proj_gravity_noise_std"])
-    ref_pg = refs.get("proj_gravity_noise")
-    if ref_pg is not None:
-        ok = meas_pg <= ref_pg
-        print(f"  [{status(ok)}] proj-gravity noise: measured {meas_pg:.4f} "
-              f"<= DR +/-{ref_pg:.3f}")
-
-    # mount: Isaac Lab uses rot=(1,0,0,0) identity rel base_link. We can only check
-    # the orientation tilt here (position offset is a physical measurement).
-    rot = refs["mount_rot_wxyz"]
-    tilt = row.get("mount_tilt_from_vertical_deg", float("nan"))
-    identity = max(abs(rot[1]), abs(rot[2]), abs(rot[3])) < 1e-6
-    print(f"\n  IMU mount (Isaac Lab): pos={refs['mount_pos']}, rot(wxyz)={rot}"
-          f"{' [identity]' if identity else ''}")
-    print(f"  measured mount tilt from vertical: {tilt:.2f} deg "
-          "(base must be level; large tilt => driver apply_ros_transform or a real "
-          "mount-frame offset to fix in the on-robot transform)")
-    print("\n  Position offset must be measured physically (tape/CAD), not from the IMU.")
+    # ---- bus jitter ----
+    bus_row = latest_row(args.results, "bus_jitter")
+    if bus_row is None:
+        print("bus_jitter: no rows yet — skipping.")
+    else:
+        rate_refs = load_isaaclab_rate_refs()
+        policy_rate = rate_refs["policy_rate_hz"]
+        meas_rate = bus_row.get("rate_hz_mean") or 0.0
+        # the bus must sustain at least the policy rate, with margin (2x is comfy)
+        ok = meas_rate >= policy_rate
+        comfy = meas_rate >= 2.0 * policy_rate
+        print(f"bus_jitter diff  (measured {bus_row['date']} vs Isaac Lab)\n")
+        print(f"  Isaac Lab: sim.dt={rate_refs['sim_dt']}, decimation="
+              f"{rate_refs['decimation']} -> policy rate {policy_rate:.1f} Hz")
+        print(f"  [{status(ok)}] bus rate {meas_rate:.1f} Hz >= policy rate "
+              f"{policy_rate:.1f} Hz" + ("  (2x margin OK)" if comfy else
+              "  (WARNING: < 2x margin — raise decimation or speed up the bus)"))
+        # implied minimum decimation at the measured rate (sim.dt fixed)
+        if meas_rate > 0:
+            min_dec = math.ceil((1.0 / meas_rate) / rate_refs["sim_dt"])
+            print(f"  implied min decimation at this bus rate (sim.dt fixed): {min_dec} "
+                  f"(trained {rate_refs['decimation']})")
+        print(f"  jitter: period std {bus_row['period_ms_std']} ms, "
+              f"p99 {bus_row['period_ms_p99']} ms, dropped ticks {bus_row['dropped_ticks']}")
+        nanfrac = bus_row.get("channel_nan_fraction", {})
+        bad = {c: f for c, f in nanfrac.items() if f > 0.01}
+        print(f"  [{status(not bad)}] per-channel NaN fraction: "
+              + (f"{bad} (channel(s) dropping samples)" if bad else "all channels clean"))
 
 
 if __name__ == "__main__":
