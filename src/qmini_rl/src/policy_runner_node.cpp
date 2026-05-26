@@ -22,11 +22,18 @@
 //   Action: q_des[i] = home[i] + 0.5 * action[i]   (use_default_offset=True).
 //   Gait phase: free-running 1.5 Hz, phiR = phiL + 0.5, advance +freq*dt/step.
 //
-// !!! JOINT ORDER CAVEAT !!!  kJointOrder below is the PhysX articulation DOF
-// order INFERRED from the URDF tree (left chain then right chain). It is not
-// stored in any Isaac Lab artifact. Confirm it ONCE on the sim side by printing
-// env.scene["robot"].joint_names in play.py and freezing that list. A silent
-// reorder here is the most likely way to break the policy.
+// !!! JOINT ORDER !!!  kPolicyOrder below is the POLICY's joint order — the
+// order the ONNX obs/action use. It was VERIFIED 2026-05-27 by printing
+// env.scene["robot"].joint_names in Isaac Lab play.py:
+//   [hip_yaw_l, hip_yaw_r, hip_roll_l, hip_roll_r, hip_pitch_l, hip_pitch_r,
+//    knee_pitch_l, knee_pitch_r, ankle_pitch_l, ankle_pitch_r]
+// This is INTERLEAVED by joint type (l,r,l,r,...), which is DIFFERENT from the
+// hardware/canonical by-leg order used in qmini_controllers + qmini_hardware
+// (all-left-then-all-right). That is fine and intentional: this node reads
+// /joint_states and /home_pose BY NAME into kPolicyOrder, runs the ONNX in
+// kPolicyOrder, and publishes /joint_target as a JointState with explicit joint
+// NAMES — pd_packer maps that target by name, so the two orderings never need to
+// agree. Re-verify kPolicyOrder against play.py if the policy is retrained.
 
 #include <algorithm>
 #include <array>
@@ -52,11 +59,12 @@ constexpr std::size_t kN = 10;        // joints
 constexpr std::size_t kObs = 44;      // observation dims
 constexpr std::size_t kAct = 10;      // action dims
 
-// Canonical joint order — MUST match qmini_controllers/qmini_hardware AND the
-// policy's articulation DOF order (see caveat in the file header).
+// Policy joint order — the order the ONNX obs/action use. INTERLEAVED by joint
+// type (verified via play.py 2026-05-27; see the file header). NOT the hardware
+// by-leg order — bridged to pd_packer by JointState joint names.
 constexpr std::array<const char*, kN> kJointOrder = {
-    "hip_yaw_l",  "hip_roll_l",  "hip_pitch_l",  "knee_pitch_l",  "ankle_pitch_l",
-    "hip_yaw_r",  "hip_roll_r",  "hip_pitch_r",  "knee_pitch_r",  "ankle_pitch_r"};
+    "hip_yaw_l",   "hip_yaw_r",    "hip_roll_l",    "hip_roll_r",   "hip_pitch_l",
+    "hip_pitch_r", "knee_pitch_l", "knee_pitch_r",  "ankle_pitch_l", "ankle_pitch_r"};
 
 // quat_rotate_inverse(q, v): express world vector v in the body frame, matching
 // Isaac Lab's isaaclab.utils.math.quat_rotate_inverse exactly.

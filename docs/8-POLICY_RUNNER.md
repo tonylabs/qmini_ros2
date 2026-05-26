@@ -64,19 +64,35 @@ Observation order (no normalization / clipping / framestack / on-robot noise):
 - `gait_phase_sincos` element order follows the Isaac Lab **code** (`[sinL, sinR,
   cosL, cosR]`), not its docstring.
 
+## Joint order (verified)
+
+`kJointOrder` is the **policy's** joint order — the order the ONNX obs/action use.
+**Verified 2026-05-27** via `env.scene["robot"].joint_names` in Isaac Lab
+`play.py`:
+
+```
+[hip_yaw_l, hip_yaw_r, hip_roll_l, hip_roll_r, hip_pitch_l, hip_pitch_r,
+ knee_pitch_l, knee_pitch_r, ankle_pitch_l, ankle_pitch_r]
+```
+
+This is **interleaved by joint type** (l, r, l, r, …) — **different** from the
+hardware/canonical **by-leg** order in `qmini_controllers`/`qmini_hardware`
+(all-left-then-all-right). That's intentional and safe: `qmini_rl` reads
+`/joint_states` + home pose **by name** into this order, runs the ONNX in it, and
+publishes `/joint_target` as a `JointState` with explicit joint **names** —
+`pd_packer` maps the target by name, so the two orderings never need to agree.
+**Re-verify against `play.py` if the policy is retrained.**
+
 ## Status / before you trust it on hardware
 
 Built and validated on x86 with synthetic inputs: 50 Hz, dims checked, bounded
-deltas around home for a zero (standing) command. **Not yet run on the real
-robot.** Two things to settle first:
+deltas around home for a zero (standing) command. Joint order verified (above).
+**Not yet run on the real robot.** Still to settle:
 
-1. **Joint order** (`kJointOrder`) is the PhysX articulation DOF order *inferred*
-   from the URDF tree — not stored anywhere. Confirm it once by printing
-   `env.scene["robot"].joint_names` in Isaac Lab `play.py` and freezing that
-   list. A silent reorder is the most likely way to break the policy.
-2. **IMU frame alignment** — `imu_projected_gravity` assumes `/imu/data`
-   orientation is the `base_link` orientation. That alignment is confirmed in M4
-   (matches the Isaac Lab `ImuCfg` mount).
+- **IMU frame alignment** — `imu_projected_gravity` assumes `/imu/data` is in
+  `base_link`. Resolved 2026-05-26 via the `qmini_imu` `mount_rotation`
+  (`[0,0,1,0]`); the M4 IMU diff is GREEN.
+- **aarch64 onnxruntime** build on the Pi (lib vendored in `qmini_official_sdk`).
 
 `qmini_rl/policies/policy.onnx` is the current export; replace it with the final
 validated export when retraining settles.
