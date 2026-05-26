@@ -1,6 +1,7 @@
-# qmini_calibration
+# Calibration — Measuring the Real Robot (M4)
 
-Measures **what this robot actually is**, so the Isaac Lab DR ranges can be
+The `qmini_calibration` package measures **what this robot actually is**, so the
+Isaac Lab DR ranges can be
 widened to cover reality. The ROS 2 side does not tune the robot — it measures,
 then the training side is adjusted and retrained. Permanent package, not
 throwaway scripts.

@@ -13,4 +13,19 @@
 #   actuator_latency  — USB->RS485 round-trip + effective PD          (step 4)
 #   friction          — ankle/floor static & kinetic friction         (step 5)
 #
-# (empty until the first analyzer run appends a row)
+# IMU mount rotation (base_link <- sensor), determined 2026-05-26.
+# Quaternion [w,x,y,z]; set in qmini_imu/config/imu.yaml as mount_rotation.
+# Verified: makes imu_projected_gravity read (0,0,-1) upright. Matches the
+# official SDK's (-1,+1,-1) sign flip on x,z (= 180 deg about Y).
+imu_mount:
+  - date: 2026-05-26
+    rotation_wxyz: [0.0, 0.0, 1.0, 0.0]   # 180 deg about Y
+    equivalent_axis_signs: [-1, 1, -1]
+    isaac_lab_ref_rot_wxyz: [1.0, 0.0, 0.0, 0.0]   # ImuCfg expects identity rel base_link
+    note: >
+      The sim assumes the IMU frame == base_link (rot identity). On this robot the
+      N100 is physically mounted 180 deg about Y, so the driver rotates it back.
+      Position offset pos=(-0.04718,0.0663,0.11094) is a physical (tape/CAD)
+      measurement, not captured here.
+
+# (noise/jitter rows are appended by the analyzers from recorded bags)

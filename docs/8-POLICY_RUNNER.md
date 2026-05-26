@@ -1,6 +1,7 @@
-# qmini_rl
+# Policy Runner — ONNX Inference (M5)
 
-M5 ONNX **policy runner**. Loads the Isaac-Lab-exported policy (`obs[44] →
+The `qmini_rl` package: the M5 ONNX **policy runner**. Loads the
+Isaac-Lab-exported policy (`obs[44] →
 action[10]`), reconstructs the exact training observation on-robot, runs
 inference at 50 Hz, and publishes absolute joint-position targets on
 `/joint_target` (`sensor_msgs/JointState`). `qmini_controllers/pd_packer_node`
@@ -43,7 +44,8 @@ At **runtime** the `.so` must be on `LD_LIBRARY_PATH` (e.g.
 
 ## Parity with Isaac Lab — every constant is mirrored, not invented
 
-See `config/policy.yaml` and the header comment in `src/policy_runner_node.cpp`.
+See `qmini_rl/config/policy.yaml` and the header comment in
+`qmini_rl/src/policy_runner_node.cpp`.
 Observation order (no normalization / clipping / framestack / on-robot noise):
 
 | # | term | dims | scale |
@@ -76,5 +78,5 @@ robot.** Two things to settle first:
    orientation is the `base_link` orientation. That alignment is confirmed in M4
    (matches the Isaac Lab `ImuCfg` mount).
 
-`policies/policy.onnx` is the current export; replace it with the final
+`qmini_rl/policies/policy.onnx` is the current export; replace it with the final
 validated export when retraining settles.

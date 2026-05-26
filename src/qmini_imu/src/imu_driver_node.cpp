@@ -26,6 +26,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
@@ -55,6 +56,35 @@ speed_t to_baud_constant(int baud)
   }
 }
 
+// Quaternions are (w, x, y, z). Hamilton product a ⊗ b.
+std::array<double, 4> quat_mul(const std::array<double, 4> & a, const std::array<double, 4> & b)
+{
+  return {
+    a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+    a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+    a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+    a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0]};
+}
+
+// Rotate vector v by quaternion q: v' = R(q) v.
+std::array<double, 3> quat_rotate(const std::array<double, 4> & q, const std::array<double, 3> & v)
+{
+  const double w = q[0];
+  const std::array<double, 3> u = {q[1], q[2], q[3]};
+  const double uu = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+  const double uv = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  const std::array<double, 3> cross = {
+    u[1] * v[2] - u[2] * v[1],
+    u[2] * v[0] - u[0] * v[2],
+    u[0] * v[1] - u[1] * v[0]};
+  const double s = w * w - uu;
+  std::array<double, 3> out{};
+  for (std::size_t i = 0; i < 3; ++i) {
+    out[i] = s * v[i] + 2.0 * uv * u[i] + 2.0 * w * cross[i];
+  }
+  return out;
+}
+
 class ImuDriverNode : public rclcpp::Node
 {
 public:
@@ -69,6 +99,22 @@ public:
     // about Y to land in a ROS-standard frame. Default true reproduces the
     // known-working vendor output; M4 confirms it against the base_link mount.
     apply_ros_transform_ = declare_parameter<bool>("apply_ros_transform", true);
+    // Mount rotation R (chip/sensor frame -> base_link), as a quaternion
+    // [w,x,y,z]. Applied uniformly to orientation (post-multiply), gyro, and
+    // accel so all three land in base_link. Default identity; this robot's
+    // verified mount is 180 deg about Y = [0,0,1,0] (the official SDK's
+    // (-1,+1,-1) sign flip on x,z) — set in config/imu.yaml. M4 records it.
+    {
+      auto m = declare_parameter<std::vector<double>>(
+        "mount_rotation", std::vector<double>{1.0, 0.0, 0.0, 0.0});
+      if (m.size() != 4) {
+        RCLCPP_FATAL(get_logger(), "mount_rotation must be 4 numbers [w,x,y,z]");
+        throw std::runtime_error("mount_rotation size");
+      }
+      double n = std::sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2] + m[3] * m[3]);
+      if (n < 1e-9) {n = 1.0;}
+      mount_rotation_ = {m[0] / n, m[1] / n, m[2] / n, m[3] / n};
+    }
     // Covariance diagonals (0 = "unknown" per REP-145; we publish small values
     // so downstream filters don't treat the data as garbage). Tune in M4.
     gyro_cov_ = declare_parameter<double>("gyro_covariance", 0.01);
@@ -232,35 +278,43 @@ private:
     msg.header.stamp = now();
     msg.header.frame_id = frame_id_;
 
+    // 1. orientation in the sensor's ROS frame (optional vendor device_type==1
+    //    180-deg-about-Y on the quaternion).
+    std::array<double, 4> q_sensor;  // (w,x,y,z)
     if (apply_ros_transform_) {
-      // Vendor device_type==1: rotate the sensor quaternion 180 deg about Y
-      // (q_out = (0,0,1,0) * q_ahrs), which maps the N100's internal axes to a
-      // ROS-standard frame. Closed form of that Hamilton product:
-      msg.orientation.w = -ahrs.qy;
-      msg.orientation.x = ahrs.qz;
-      msg.orientation.y = ahrs.qw;
-      msg.orientation.z = -ahrs.qx;
+      q_sensor = {-ahrs.qy, ahrs.qz, ahrs.qw, -ahrs.qx};
     } else {
-      msg.orientation.w = ahrs.qw;
-      msg.orientation.x = ahrs.qx;
-      msg.orientation.y = ahrs.qy;
-      msg.orientation.z = ahrs.qz;
+      q_sensor = {ahrs.qw, ahrs.qx, ahrs.qy, ahrs.qz};
     }
 
+    // 2. raw gyro/accel in the sensor frame.
+    std::array<double, 3> gyro, accel;
     if (have_imu_) {
-      msg.angular_velocity.x = imu_pkt_.gyroscope_x;
-      msg.angular_velocity.y = imu_pkt_.gyroscope_y;
-      msg.angular_velocity.z = imu_pkt_.gyroscope_z;
-      msg.linear_acceleration.x = imu_pkt_.accelerometer_x;
-      msg.linear_acceleration.y = imu_pkt_.accelerometer_y;
-      msg.linear_acceleration.z = imu_pkt_.accelerometer_z;
+      gyro = {imu_pkt_.gyroscope_x, imu_pkt_.gyroscope_y, imu_pkt_.gyroscope_z};
+      accel = {imu_pkt_.accelerometer_x, imu_pkt_.accelerometer_y, imu_pkt_.accelerometer_z};
     } else {
-      // No IMU frame seen yet — fall back to AHRS body rates so the message is
-      // still usable; accel stays zero until the first IMU frame arrives.
-      msg.angular_velocity.x = ahrs.roll_speed;
-      msg.angular_velocity.y = ahrs.pitch_speed;
-      msg.angular_velocity.z = ahrs.heading_speed;
+      // No IMU frame yet — fall back to AHRS body rates; accel stays zero.
+      gyro = {ahrs.roll_speed, ahrs.pitch_speed, ahrs.heading_speed};
+      accel = {0.0, 0.0, 0.0};
     }
+
+    // 3. apply the mount rotation R (base_link <- sensor) uniformly: orientation
+    //    post-multiplied so quat_rotate_inverse downstream yields base-frame
+    //    gravity; gyro/accel rotated by R. Default R is identity.
+    const auto q_base = quat_mul(q_sensor, mount_rotation_);
+    gyro = quat_rotate(mount_rotation_, gyro);
+    accel = quat_rotate(mount_rotation_, accel);
+
+    msg.orientation.w = q_base[0];
+    msg.orientation.x = q_base[1];
+    msg.orientation.y = q_base[2];
+    msg.orientation.z = q_base[3];
+    msg.angular_velocity.x = gyro[0];
+    msg.angular_velocity.y = gyro[1];
+    msg.angular_velocity.z = gyro[2];
+    msg.linear_acceleration.x = accel[0];
+    msg.linear_acceleration.y = accel[1];
+    msg.linear_acceleration.z = accel[2];
 
     msg.orientation_covariance[0] = orient_cov_;
     msg.orientation_covariance[4] = orient_cov_;
@@ -280,6 +334,7 @@ private:
   int baud_rate_{921600};
   std::string frame_id_;
   bool apply_ros_transform_{true};
+  std::array<double, 4> mount_rotation_{1.0, 0.0, 0.0, 0.0};  // [w,x,y,z], base<-sensor
   double gyro_cov_{0.01};
   double accel_cov_{0.05};
   double orient_cov_{0.01};

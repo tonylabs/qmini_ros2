@@ -18,6 +18,13 @@ imu_driver_node:
     # rot=(1,0,0,0)); adjust the on-robot transform there, not the policy.
     apply_ros_transform: true
 
+    # Mount rotation R (base_link <- sensor), quaternion [w,x,y,z]. Applied to
+    # orientation + gyro + accel so /imu/data is in base_link. THIS ROBOT's IMU
+    # is mounted 180 deg about Y -> [0,0,1,0] (= the official SDK's (-1,+1,-1)
+    # sign flip on x,z). Verified 2026-05-26: makes imu_projected_gravity read
+    # (0,0,-1) upright. Identity [1,0,0,0] = no mount correction.
+    mount_rotation: [0.0, 0.0, 1.0, 0.0]
+
     # Covariance diagonals — placeholders until M4 measures the real noise floor
     # (Isaac Lab trains with Unoise +/-0.35 on ang_vel, +/-0.1 on proj-gravity).
     gyro_covariance: 0.01
