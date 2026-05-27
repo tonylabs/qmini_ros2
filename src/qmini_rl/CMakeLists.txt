@@ -16,11 +16,10 @@ find_package(qmini_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
 # --- ONNX Runtime (system-installed prebuilt; not provided by ROS) ----------
-# Point ONNXRUNTIME_DIR at the install root. We search a couple of common
-# layouts so it works with both a standard /opt/onnxruntime release (include/,
-# lib/) and the copy vendored in qmini_official_sdk (include/onnx/, lib/onnx/).
-#   On the Pi 5: download the prebuilt aarch64 onnxruntime release to
-#   /opt/onnxruntime, or `export ONNXRUNTIME_DIR=/path/to/onnxruntime`.
+# Install an official onnxruntime release (standard include/, lib/ layout) and
+# point ONNXRUNTIME_DIR at it; defaults to /opt/onnxruntime.
+#   On the Pi 5: install the official aarch64 release to /opt/onnxruntime
+#   (see docs/8-POLICY_RUNNER.md "ONNX Runtime").
 if(DEFINED ENV{ONNXRUNTIME_DIR})
   set(ONNXRUNTIME_DIR $ENV{ONNXRUNTIME_DIR})
 else()
@@ -29,11 +28,11 @@ endif()
 
 find_path(ORT_INCLUDE_DIR
   NAMES onnxruntime_cxx_api.h
-  HINTS "${ONNXRUNTIME_DIR}/include" "${ONNXRUNTIME_DIR}/include/onnx"
+  HINTS "${ONNXRUNTIME_DIR}/include"
 )
 find_library(ORT_LIBRARY
   NAMES onnxruntime
-  HINTS "${ONNXRUNTIME_DIR}/lib" "${ONNXRUNTIME_DIR}/lib/onnx"
+  HINTS "${ONNXRUNTIME_DIR}/lib"
 )
 
 if(ORT_INCLUDE_DIR AND ORT_LIBRARY)
@@ -48,8 +47,8 @@ if(ORT_INCLUDE_DIR AND ORT_LIBRARY)
 else()
   message(WARNING
     "qmini_rl: ONNX Runtime NOT found under '${ONNXRUNTIME_DIR}'. "
-    "Skipping policy_runner_node. Set ONNXRUNTIME_DIR and rebuild. "
-    "(Searched include/{,onnx} and lib/{,onnx}.)")
+    "Skipping policy_runner_node. Install an onnxruntime release (include/, lib/) "
+    "and set ONNXRUNTIME_DIR, then rebuild.")
 endif()
 
 # Install the policy ONNX + config + launch so the runtime can find them.

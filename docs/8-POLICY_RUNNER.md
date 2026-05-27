@@ -27,20 +27,61 @@ Velocity command comes in on `/cmd_vel` (`geometry_msgs/Twist`:
 full system `qmini_safety` will publish the gated, speed-capped command here;
 for bench tests use `teleop_twist_keyboard` or `ros2 topic pub`.
 
-## ONNX Runtime
+## Installing ONNX Runtime
 
-Not a ROS package — install a prebuilt release and point `ONNXRUNTIME_DIR` at it
-before `colcon build`. CMake searches `include/{,onnx}` and `lib/{,onnx}`.
+ONNX Runtime is **not** a ROS package and is not pulled in by `rosdep` — you
+install a prebuilt C++ release yourself, on whichever machine builds the node.
+CMake (`qmini_rl/CMakeLists.txt`) looks for the **standard release layout**
+(`include/onnxruntime_cxx_api.h`, `lib/libonnxruntime.so`) under `ONNXRUNTIME_DIR`,
+which defaults to `/opt/onnxruntime`. Install there and no env var is needed.
 
-- **Pi 5 (aarch64, deployment):** the aarch64 `libonnxruntime.so` (v1.19.2) is
-  vendored in `qmini_official_sdk/{include,lib}/onnx` — `export
-  ONNXRUNTIME_DIR=~/Documents/GitHub/qmini_official_sdk`.
-- **x86 dev box:** download the matching x64 release
-  (`onnxruntime-linux-x64-1.19.2.tgz`) and `export ONNXRUNTIME_DIR=/path/to/it`.
-  The SDK's lib is ARM-only and won't link on x86.
+> Pin **v1.19.2** — the version the exported policy was validated against. A
+> newer release usually works, but re-run a dry inference afterwards. Do **not**
+> use `pip install onnxruntime` (Python wheel only — no C++ headers/lib) or the
+> copy inside `qmini_official_sdk` (that's a private repo; the deploy build must
+> not depend on it).
 
-At **runtime** the `.so` must be on `LD_LIBRARY_PATH` (e.g.
-`export LD_LIBRARY_PATH=$ONNXRUNTIME_DIR/lib:$LD_LIBRARY_PATH`).
+### Pi 5 (aarch64) — the deployment target
+
+```bash
+VER=1.19.2
+cd /tmp
+wget https://github.com/microsoft/onnxruntime/releases/download/v${VER}/onnxruntime-linux-aarch64-${VER}.tgz
+tar xzf onnxruntime-linux-aarch64-${VER}.tgz
+sudo mv onnxruntime-linux-aarch64-${VER} /opt/onnxruntime
+
+# let the runtime linker find libonnxruntime.so permanently (cleaner than
+# exporting LD_LIBRARY_PATH in every shell):
+echo /opt/onnxruntime/lib | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
+sudo ldconfig
+```
+
+### x86 dev box
+
+Same idea with the x64 release (the aarch64 lib will not link on x86):
+
+```bash
+VER=1.19.2
+cd /tmp
+wget https://github.com/microsoft/onnxruntime/releases/download/v${VER}/onnxruntime-linux-x64-${VER}.tgz
+tar xzf onnxruntime-linux-x64-${VER}.tgz
+sudo mv onnxruntime-linux-x64-${VER} /opt/onnxruntime
+echo /opt/onnxruntime/lib | sudo tee /etc/ld.so.conf.d/onnxruntime.conf && sudo ldconfig
+```
+
+(If you'd rather not install system-wide, extract anywhere and
+`export ONNXRUNTIME_DIR=/path/to/onnxruntime-linux-<arch>-${VER}` before building;
+then add its `lib/` to `LD_LIBRARY_PATH` at runtime.)
+
+### Verify
+
+```bash
+ls /opt/onnxruntime/include/onnxruntime_cxx_api.h /opt/onnxruntime/lib/libonnxruntime.so
+
+# build — CMake should print "qmini_rl: ONNX Runtime headers ... lib ...".
+# If it prints "ONNX Runtime NOT found", ONNXRUNTIME_DIR is wrong.
+colcon build --symlink-install --packages-select qmini_rl
+```
 
 ## Parity with Isaac Lab — every constant is mirrored, not invented
 
@@ -92,7 +133,8 @@ deltas around home for a zero (standing) command. Joint order verified (above).
 - **IMU frame alignment** — `imu_projected_gravity` assumes `/imu/data` is in
   `base_link`. Resolved 2026-05-26 via the `qmini_imu` `mount_rotation`
   (`[0,0,1,0]`); the M4 IMU diff is GREEN.
-- **aarch64 onnxruntime** build on the Pi (lib vendored in `qmini_official_sdk`).
+- **aarch64 onnxruntime** installed on the Pi to `/opt/onnxruntime` (official
+  release, not the SDK copy — see "ONNX Runtime" above), then build `qmini_rl`.
 
 `qmini_rl/policies/policy.onnx` is the current export; replace it with the final
 validated export when retraining settles.
