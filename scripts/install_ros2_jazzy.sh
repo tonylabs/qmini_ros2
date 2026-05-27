@@ -9,13 +9,16 @@
 #   CN_MIRROR_HOST=mirrors.aliyun.com       USE_CN_MIRROR=1 bash install_ros2_jazzy.sh
 #   CN_MIRROR_HOST=repo.huaweicloud.com     USE_CN_MIRROR=1 bash install_ros2_jazzy.sh
 #
-# Skip the onnxruntime pip install (default is to install it for the policy node):
+# Skip the ONNX Runtime (C++) install (default installs it for the policy node):
 #   INSTALL_ONNX=0 bash install_ros2_jazzy.sh
+# Pin a different ONNX Runtime version (default 1.19.2):
+#   ORT_VER=1.19.2 bash install_ros2_jazzy.sh
 set -euo pipefail
 
 USE_CN_MIRROR="${USE_CN_MIRROR:-0}"
 CN_MIRROR_HOST="${CN_MIRROR_HOST:-mirrors.tuna.tsinghua.edu.cn}"
 INSTALL_ONNX="${INSTALL_ONNX:-1}"
+ORT_VER="${ORT_VER:-1.19.2}"
 NEED_RELOGIN=0
 
 if [ "$(. /etc/os-release && echo "$VERSION_CODENAME")" != "noble" ]; then
@@ -36,6 +39,25 @@ if [ "$USE_CN_MIRROR" = "1" ]; then
         "$f"
     fi
   done
+fi
+
+# Some Ubuntu 24.04 images (Raspberry Pi especially) ship with only the 'noble'
+# and 'noble-security' apt pockets, missing 'noble-updates'. The patched runtime
+# libs (liblz4-1, libzstd1, zlib1g, ... at versions like 1build1.1) live in
+# noble-updates, and the matching '-dev' packages depend on the EXACT version —
+# so without noble-updates the ROS install fails with "held broken packages".
+echo "[0/8] Ensure noble-updates + noble-backports pockets are enabled"
+SRC=/etc/apt/sources.list.d/ubuntu.sources
+if [ -f "$SRC" ]; then
+  if ! grep -qE '^Suites:.*noble-updates' "$SRC"; then
+    sudo cp -n "$SRC" "$SRC.bak"
+    sudo sed -i 's/^Suites: noble$/Suites: noble noble-updates noble-backports/' "$SRC"
+    echo "  Added noble-updates + noble-backports to $SRC (backup at $SRC.bak)."
+  else
+    echo "  noble-updates already enabled."
+  fi
+else
+  echo "  $SRC not found (non-deb822 sources?) — ensure noble-updates is enabled manually." >&2
 fi
 
 echo "[1/8] Locale"
@@ -66,7 +88,9 @@ ${ROS_REPO_URL} $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
   | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
 
 sudo apt-get update
-sudo apt-get upgrade -y
+# full-upgrade (not plain upgrade) so the held-back runtime libs from
+# noble-updates are pulled in, keeping them in lockstep with their -dev packages.
+sudo apt-get full-upgrade -y
 
 echo "[5/8] ROS 2 Jazzy base + dev tools"
 sudo apt-get install -y \
@@ -108,9 +132,8 @@ sudo apt-get install -y \
 
 # Non-ROS system deps the workspace links against and tools used at runtime.
 #   libeigen3-dev — imu_n100 (Eigen quaternion math)
-#   python3-numpy — policy (observation vector construction)
-#   python3-pip   — to install onnxruntime (no apt package on Noble);
-#                   the pip install is the next step below.
+#   python3-numpy — calibration analyzers / policy tooling
+#   python3-pip   — general Python tooling
 # Other system deps declared in each package.xml are resolved later with:
 #   rosdep install --from-paths src --ignore-src -y
 sudo apt-get install -y \
@@ -118,13 +141,34 @@ sudo apt-get install -y \
   python3-numpy \
   python3-pip
 
-# onnxruntime (Python) — used by the policy node. Noble enforces PEP 668 so
-# we install with --user (lands in ~/.local) + --break-system-packages
-# (acknowledges PEP 668; doesn't actually break anything since onnxruntime
-# has no apt counterpart to collide with). Opt out with INSTALL_ONNX=0.
+# ONNX Runtime (C++) — qmini_rl/policy_runner_node links the C++ API, NOT the
+# Python pip package. Install the official prebuilt release for this arch to
+# /opt/onnxruntime (CMake defaults ONNXRUNTIME_DIR there) and register it with
+# ldconfig. Opt out with INSTALL_ONNX=0; pin a version with ORT_VER=...
 if [ "$INSTALL_ONNX" = "1" ]; then
-  echo "[onnx] Installing onnxruntime to ~/.local via pip (user-site)"
-  pip install --user --break-system-packages onnxruntime
+  case "$(dpkg --print-architecture)" in
+    arm64) ORT_ARCH=aarch64 ;;
+    amd64) ORT_ARCH=x64 ;;
+    *)     ORT_ARCH="" ;;
+  esac
+  if [ -z "$ORT_ARCH" ]; then
+    echo "[onnx] Unknown arch $(dpkg --print-architecture) — skipping ONNX Runtime; install it by hand." >&2
+  elif [ -e /opt/onnxruntime/lib/libonnxruntime.so ]; then
+    echo "[onnx] /opt/onnxruntime already present — skipping."
+  else
+    echo "[onnx] Installing ONNX Runtime C++ ${ORT_VER} (${ORT_ARCH}) to /opt/onnxruntime"
+    ort_tmp="$(mktemp -d)"
+    ort_tgz="onnxruntime-linux-${ORT_ARCH}-${ORT_VER}.tgz"
+    curl -fsSL -o "${ort_tmp}/${ort_tgz}" \
+      "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VER}/${ort_tgz}"
+    tar xzf "${ort_tmp}/${ort_tgz}" -C "${ort_tmp}"
+    sudo rm -rf /opt/onnxruntime
+    sudo mv "${ort_tmp}/onnxruntime-linux-${ORT_ARCH}-${ORT_VER}" /opt/onnxruntime
+    echo /opt/onnxruntime/lib | sudo tee /etc/ld.so.conf.d/onnxruntime.conf > /dev/null
+    sudo ldconfig
+    rm -rf "${ort_tmp}"
+    echo "[onnx] Installed to /opt/onnxruntime (ldconfig registered)."
+  fi
 fi
 
 echo "[7/8] rosdep init + bashrc sourcing"

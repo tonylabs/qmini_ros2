@@ -465,7 +465,7 @@ Cause: the git submodule isn't initialized.
 Fix:
 
 ```bash
-cd ~/Documents/GitHub/qmini_ros2
+cd ~/qmini_ros2
 git submodule update --init --recursive
 ls src/qmini_hardware/third_party/unitree_actuator_sdk/CMakeLists.txt  # must exist
 ```
