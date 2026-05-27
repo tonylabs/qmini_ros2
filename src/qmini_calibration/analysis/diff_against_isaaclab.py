@@ -16,8 +16,9 @@ exactly like scripts/rsl_rl/train.py. That makes it slow to start (the simulator
 boots) but keeps the DR ranges single-sourced from the cfg. Run with the isaac
 env's python.
 
-Covers the IMU noise/mount (M4 step 2) and bus-jitter (step 3) measurements.
-Add more measurements here as their rows land.
+Covers IMU noise/mount (step 2), bus-jitter (step 3), actuator latency + PD
+(step 4) and foot-floor friction (step 5). Add more measurements here as their
+rows land.
 """
 
 import argparse
@@ -110,6 +111,22 @@ def load_isaaclab_actuator_refs():
         if md is not None:
             max_delay = md if max_delay is None else max(max_delay, int(md))
     return {"sim_dt": sim_dt, "max_delay_steps": max_delay}
+
+
+def load_isaaclab_friction_refs():
+    """Return the foot/floor friction ranges from EventCfg, read live from the cfg."""
+    _ensure_isaac_app()
+    from Qmini.tasks.qmini_locomotion.qmini_env_cfg import QminiEnvCfg
+    cfg = QminiEnvCfg()
+    refs = {}
+    for _attr, term in vars(cfg.events).items():
+        params = getattr(term, "params", None)
+        if isinstance(params, dict) and "static_friction_range" in params:
+            refs["static_friction_range"] = tuple(params["static_friction_range"])
+            if "dynamic_friction_range" in params:
+                refs["dynamic_friction_range"] = tuple(params["dynamic_friction_range"])
+            break
+    return refs
 
 
 def latest_row(results_path, key):
@@ -215,6 +232,31 @@ def main():
                 ok = abs(kpe - kpc) <= 0.2 * abs(kpc)
                 print(f"  [{status(ok)}] {j}: effective kp {kpe:.1f} vs commanded {kpc:.1f} "
                       f"({100*(kpe-kpc)/kpc:+.0f}%; firmware PD realizes the gain if within 20%)")
+
+    # ---- foot-floor friction ----
+    fri_row = latest_row(args.results, "friction")
+    if fri_row is None:
+        print("\nfriction: no rows yet — skipping.")
+    else:
+        refs = load_isaaclab_friction_refs()
+        sr = refs.get("static_friction_range")
+        mu_s = fri_row.get("mu_static_mean")
+        print(f"\nfriction diff  (measured {fri_row['date']} vs Isaac Lab)\n")
+        if sr is not None and mu_s is not None:
+            ok = sr[0] <= mu_s <= sr[1]
+            print(f"  Isaac Lab EventCfg static_friction_range = [{sr[0]}, {sr[1]}]")
+            print(f"  [{status(ok)}] measured mu_static {mu_s:.3f} "
+                  f"(n={fri_row['n_trials']}, breakaway "
+                  f"{fri_row.get('slip_angles_deg')}) within trained range"
+                  + ("" if ok else "  -> widen static_friction_range + retrain"))
+        else:
+            print("  no static_friction_range in EventCfg (or no measured mu) — skipping.")
+        dr = refs.get("dynamic_friction_range")
+        mu_k = fri_row.get("mu_kinetic_mean")
+        if dr is not None and mu_k is not None:
+            ok = dr[0] <= mu_k <= dr[1]
+            print(f"  [{status(ok)}] measured mu_kinetic ~{mu_k:.3f} (approximate) "
+                  f"vs dynamic_friction_range [{dr[0]}, {dr[1]}]")
 
 
 if __name__ == "__main__":

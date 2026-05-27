@@ -111,10 +111,44 @@ driver-stamped `/motor_command` + `/joint_states` (which carries q, dq, and
 
 Start with `gain_scale:=0.5` and one joint; the rope is the only fall protection.
 
+## Step 5: foot-floor friction (inclined-plane test)
+
+The Isaac Lab DR that matters here is `EventCfg.physics_material.static_friction_range`
+— the **foot↔floor contact** coefficient μ, not joint friction. This robot has no
+foot force/torque sensor, so we measure μ with the classic inclined-plane test,
+made objective by reusing the validated N100 IMU. **No motors, no torque — the
+safest M4 measurement.**
+
+Setup: rest the N100 on a weighted **foot-sole sample** (the real sole material +
+a representative normal load) sitting on a flat board. The IMU rides **on the
+sliding sample**, not on the board.
+
+```bash
+ros2 launch qmini_calibration friction_calib.launch.py n_trials:=5
+
+python3 src/qmini_calibration/analysis/analyze_friction_bag.py \
+    src/qmini_calibration/data/<date>_friction/bag
+python3 src/qmini_calibration/analysis/diff_against_isaaclab.py   # isaac env
+```
+
+Protocol: tilt the board **slowly** until the sample breaks away, then **stop and
+return to level** — the node re-arms for the next trial. Repeat `n_trials` times.
+The IMU's projected gravity gives the tilt angle; at breakaway the sample-mounted
+IMU sees a down-slope acceleration spike (`slip_accel_thresh`, default 1.5 m/s²),
+which marks the trial. The breakaway angle is the **peak tilt** before each slip:
+
+- **μ_static = tan(θ_breakaway)** — authoritative; diffed against
+  `static_friction_range`. (θ from 5.7° to 63.4° spans the trained μ 0.1–2.0.)
+- **μ_kinetic** — best-effort from the post-slip slide acceleration; noisy on a
+  short slide with a 6-axis IMU, so reported as approximate.
+
+If a trial never trips, lower `slip_accel_thresh` or tilt further (a very slippery
+floor, μ < 0.09, breaks away below the 5° floor and is missed).
+
 ## Visualizing the results (MATLAB)
 
 The analyzers also export a **per-sample time series CSV** into the run dir
-(`samples.csv` for IMU, `periods.csv` for bus jitter) alongside the
+(`samples.csv` for IMU and friction, `periods.csv` for bus jitter) alongside the
 `calibration_results.yaml` row. MATLAB scripts in `analysis/matlab/` load those
 and plot — base MATLAB only, no toolboxes (or MATLAB ROS Toolbox) required:
 
@@ -125,6 +159,10 @@ plot_imu_noise('src/qmini_calibration/data/<date>_imu_noise/samples.csv', 0.35, 
 
 % Bus jitter: period-over-time (dropped ticks flagged) + period histogram
 plot_bus_jitter('src/qmini_calibration/data/<date>_bus_jitter/periods.csv', 50)
+
+% Friction: tilt-over-time with slip lines + specific-force magnitude
+%           (optional [min max] static_friction_range draws μ reference bands)
+plot_friction('src/qmini_calibration/data/<date>_friction/samples.csv', [0.1 2.0])
 ```
 
 The CSVs are per-run artifacts under `data/` (gitignored, not committed). The

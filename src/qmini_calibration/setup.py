@@ -25,6 +25,7 @@ setup(
             "imu_noise_calib = qmini_calibration.imu_noise_calib:main",
             "bus_jitter_calib = qmini_calibration.bus_jitter_calib:main",
             "actuator_latency_calib = qmini_calibration.actuator_latency_calib:main",
+            "friction_calib = qmini_calibration.friction_calib:main",
         ],
     },
 )
