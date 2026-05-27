@@ -16,6 +16,18 @@ turns those into `MotorCommand`s.
 
 ## Run
 
+For the **full real-robot stack** (IMU + motor bus + safety + pd_packer +
+policy) use the integrated bringup — it composes `qmini_bringup hardware.launch.py`
+with this node and shares the home pose so the action offset matches:
+
+```bash
+ros2 launch qmini_bringup policy.launch.py                    # read-only (no torque)
+ros2 launch qmini_bringup policy.launch.py enable_torque:=true   # on the rope, deadman in hand
+```
+
+To run **just the policy node** (e.g. against bag-replayed inputs, or a bench
+test with no robot/safety):
+
 ```bash
 # point at an ONNX Runtime install (see below), then:
 ros2 launch qmini_rl policy.launch.py                 # gated on MotionGate=ENABLED
@@ -26,6 +38,66 @@ Velocity command comes in on `/cmd_vel` (`geometry_msgs/Twist`:
 `linear.x→vx, linear.y→vy, angular.z→wz`), clamped to the trained ranges. In the
 full system `qmini_safety` will publish the gated, speed-capped command here;
 for bench tests use `teleop_twist_keyboard` or `ros2 topic pub`.
+
+## Bringing the policy up on the real robot (staged)
+
+The policy is **frozen** — it does not learn on the robot. These stages
+**validate** a sim-trained policy and **expose sim-to-real gaps**; they do not
+make it robust. **Golden rule: if a behavior is bad, the fix is in Isaac Lab
+(training / DR / reward), not on the robot.** Run every stage with the robot on
+the rope, deadman in hand (hold **LB+RB**), and the hard-stop gesture known.
+
+Prereqs: `qmini_rl` built (ONNX Runtime found), homing valid (M2.0 — otherwise
+the home pose points at the wrong physical angles), and `home_pose.yaml` ==
+Isaac Lab `init_state.joint_pos` (so `q_des = home + 0.5·action` has the right
+offset; verified 2026-05-28, all 10 joints match).
+
+### Stage 1 — read-only, NO torque (de-risk the plumbing)
+
+```bash
+ros2 launch qmini_bringup policy.launch.py        # enable_torque defaults false
+```
+
+Motors stay limp; nothing can move. Verify in other terminals:
+
+- `ros2 topic hz /imu/data` → ~65 Hz; `ros2 topic hz /joint_states` → real, no NaN.
+- `policy_runner_node` log: loaded `policy.onnx`, obs 44 → action 10, 50 Hz.
+- **The key check** — hold **LB+RB** (deadman), publish **no `/cmd_vel`** (zero
+  command), then `ros2 topic echo /joint_target`:
+  - **PASS:** positions sit at ≈ the home values
+    `[0.4,-0.1,-1.5,1.0,-1.3, -0.4,0.1,1.5,-1.0,1.3]`, **near-constant**.
+  - **FAIL:** they **oscillate** (legs trying to step at zero command) → the
+    static behavior isn't clean → **stop, don't energize** → fix `static_flag` /
+    training in sim.
+- Release the deadman → `/joint_target` stops publishing.
+
+### Stage 2 — standing under torque, on the rope
+
+Only if Stage 1 passed. Rope ready to catch, deadman in hand, **no `/cmd_vel`**:
+
+```bash
+ros2 launch qmini_bringup policy.launch.py enable_torque:=true
+```
+
+- Hold **LB+RB** → motors energize and the policy holds the standing crouch
+  (should look like M2's home crouch, now policy-driven).
+  - **PASS:** holds stable; a gentle push (within the rope) is rejected/recovered.
+- **Release the deadman** → MotionGate disables → policy stops emitting →
+  `pd_packer` holds last position under PD (robot stays standing, does not collapse).
+- **Abort reflex:** any divergence / runaway / NaN → release the deadman (cuts the
+  motion path) or hit the latched hard-stop.
+
+### Stage 3 — stepping / walking (later, not on the first session)
+
+Only after standing is solid. Publish a **small** `/cmd_vel` to provoke stepping,
+still on the rope:
+
+```bash
+ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist '{linear: {x: 0.05}}'
+```
+
+Ramp the command up gradually; walking is the end of this progression, not the
+start. Poor walking is a sim-training finding — feed it back, don't tune the robot.
 
 ## Installing ONNX Runtime
 
