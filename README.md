@@ -1,12 +1,7 @@
 # Qmini ROS 2
 
 ROS 2 Jazzy control stack for the Qmini bipedal robot. Designed to run on a
-Raspberry Pi 5 (Ubuntu 24.04, 4 GB RAM). Companion training repo:
-`~/Documents/GitHub/qmini_isaaclab` (Isaac Lab + rsl_rl, PPO).
-
-**This is M0 — workspace scaffolding only.** No hardware nodes, no policy
-runner. The next milestones (M1 motor bus, M2 PD hold, …) fill in the
-behaviour. See `CLAUDE.md` for the architecture and milestone plan.
+Raspberry Pi 5 (Ubuntu 24.04, 4 GB RAM). Companion the training repo [Qmini Isaac Lab](https://github.com/tonylabs/python_qmini_isaaclab).
 
 ## Packages
 
@@ -28,6 +23,11 @@ behaviour. See `CLAUDE.md` for the architecture and milestone plan.
 ```bash
 # One-time per shell
 source /opt/ros/jazzy/setup.bash
+
+# Or add to the bashrc
+source /opt/ros/humble/setup.bash
+source "$HOME/qmini_ws/install/setup.bash"
+
 
 # Install ROS deps declared in package.xml
 rosdep install --from-paths src --ignore-src -r -y
