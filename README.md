@@ -28,6 +28,11 @@ source /opt/ros/humble/setup.bash
 source /opt/ros/humble/setup.bash
 source "$HOME/qmini_ws/install/setup.bash"
 
+# Go to the Qmini ROS 2 Workspace
+cd ~/qmini_ws
+
+# Update ROS dependencies
+rosdep update
 
 # Install ROS deps declared in package.xml
 rosdep install --from-paths src --ignore-src -r -y
@@ -39,8 +44,10 @@ git submodule update --init --recursive
 # Build (M0 only needs these three packages to succeed)
 colcon build --symlink-install --packages-select qmini_msgs qmini_description qmini_bringup
 
-# Verify the URDF in RViz
+# Load workspace wide bash
 source install/setup.bash
+
+# Verify the URDF in RViz
 ros2 launch qmini_bringup view_robot.launch.py
 ```
 
