@@ -22,7 +22,7 @@ sudo apt install -y joystick evtest    # joystick provides jstest + jscal
 | `evtest /dev/input/eventN` | `evtest` | raw evdev | named events (`ABS_X`, `BTN_TL`, …); also dumps the device descriptor |
 
 ROS 2's `joy` package (the `joy_node`) is already installed with
-`ros-jazzy-desktop`; no extra apt step for the ROS path.
+`ros-humble-desktop`; no extra apt step for the ROS path.
 
 ## The actual controller (NOT what CLAUDE.md assumes)
 
@@ -118,11 +118,11 @@ control to prove the *transmitter* is live.
 
 ## ROS 2 (`joy_node`)
 
-The ROS 2 Jazzy `joy` package (SDL2-based) is installed and reads `jsN`/evdev
+The ROS 2 Humble `joy` package (SDL2-based) is installed and reads `jsN`/evdev
 directly — it does **not** need anything beyond a working gamepad node.
 
 ```bash
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/humble/setup.bash
 ros2 run joy joy_node
 # in another shell:
 ros2 topic echo /joy

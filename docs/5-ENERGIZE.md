@@ -167,7 +167,7 @@ Re-run the comparison until every joint matches the URDF.
 Only once Step 1 passes for every joint:
 
 ```bash
-source /opt/ros/jazzy/setup.bash && source install/setup.bash
+source /opt/ros/humble/setup.bash && source install/setup.bash
 ros2 launch qmini_bringup controller_test.launch.py enable_torque:=true
 ```
 

@@ -16,7 +16,7 @@
   <depend>yaml-cpp</depend>
 
   <!-- ONNX Runtime is expected to be installed system-wide; not a ROS package. -->
-  <!-- On Ubuntu 24.04 / Pi 5: download a prebuilt aarch64 release and place it -->
+  <!-- On Ubuntu 22.04 / Pi 5: download a prebuilt aarch64 release and place it -->
   <!-- under /opt/onnxruntime/, or build from source. CMakeLists.txt finds it. -->
 
   <test_depend>ament_lint_auto</test_depend>

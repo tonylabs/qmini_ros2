@@ -1,4 +1,4 @@
-# Installation — From a Fresh Ubuntu 24.04 to a Built Workspace
+# Installation — From a Fresh Ubuntu 22.04 to a Built Workspace
 
 First-time setup for the `qmini_ros2` stack. Do this before any of the numbered
 bring-up guides (`1-SMOKE_TEST.md` onward).
@@ -7,8 +7,8 @@ Two machines, same steps, different onnxruntime arch:
 
 | Machine | Role | Arch | ROS 2 | onnxruntime |
 |---|---|---|---|---|
-| **Dev PC** | development / build | x86_64 (`amd64`) | Jazzy | `onnxruntime-linux-x64` |
-| **Raspberry Pi 5** | the real robot | aarch64 (`arm64`) | Jazzy | `onnxruntime-linux-aarch64` |
+| **Dev PC** | development / build | x86_64 (`amd64`) | Humble | `onnxruntime-linux-x64` |
+| **Raspberry Pi 5** | the real robot | aarch64 (`arm64`) | Humble | `onnxruntime-linux-aarch64` |
 
 The build is arch-agnostic — only the onnxruntime release tarball differs.
 
@@ -16,67 +16,66 @@ The build is arch-agnostic — only the onnxruntime release tarball differs.
 
 ## 0. Prerequisites
 
-- **Ubuntu 24.04 (noble)** — ROS 2 Jazzy targets exactly this release.
-- On the Pi: a 64-bit Ubuntu 24.04 image (not Raspberry Pi OS).
+- **Ubuntu 22.04 (jammy)** — ROS 2 Humble targets exactly this release.
+- On the Pi: a 64-bit Ubuntu 22.04 image (not Raspberry Pi OS).
 - Network access (or a Chinese mirror — see *Behind the GFW* below).
 - The workspace lives at **`~/qmini_ros2`** (clone/copy it there; all commands
   below assume that path).
 
-### ⚠️ Enable the `noble-updates` pocket FIRST
+### ⚠️ Enable the `jammy-updates` pocket FIRST
 
-Some Ubuntu images (Raspberry Pi images especially) ship with only `noble` and
-`noble-security` in their apt sources, **missing `noble-updates`**. That breaks
+Some Ubuntu images (Raspberry Pi images especially) ship with only `jammy` and
+`jammy-security` in their apt sources, **missing `jammy-updates`**. That breaks
 the ROS install partway through with errors like:
 
 ```
-liblz4-dev : Depends: liblz4-1 (= 1.9.4-1build1) but 1.9.4-1build1.1 is to be installed
+liblz4-dev : Depends: liblz4-1 (= 1.9.3-2build1) but 1.9.3-2ubuntu0.1 is to be installed
 zlib1g-dev : Depends: zlib1g (= ...ubuntu2)      but ...ubuntu2.1 is to be installed
 dpkg-dev   : Depends: bzip2 but it is not installable
 ```
 
 Each `-dev` package must match its runtime lib's **exact** version; the patched
-`…build1.1` runtime libs live in `noble-updates`, so without that pocket apt
+`…ubuntu0.1` runtime libs live in `jammy-updates`, so without that pocket apt
 can't line them up. Check and fix before running the installer:
 
 ```bash
-grep '^Suites:' /etc/apt/sources.list.d/ubuntu.sources
-# the main stanza should read:  Suites: noble noble-updates noble-backports
-# if it only says "Suites: noble", add the pockets (edits only that line):
-sudo sed -i 's/^Suites: noble$/Suites: noble noble-updates noble-backports/' \
-    /etc/apt/sources.list.d/ubuntu.sources
+# Ubuntu 22.04 uses the legacy /etc/apt/sources.list (not deb822 ubuntu.sources).
+grep -E 'jammy-updates|jammy-backports' /etc/apt/sources.list || \
+  echo "deb http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" | \
+    sudo tee -a /etc/apt/sources.list
 sudo apt update && sudo apt full-upgrade -y
 ```
 
-The bundled `install_ros2_jazzy.sh` now does this automatically (step `[0/8]`),
+The bundled `install_ros2_humble.sh` now does this automatically (step `[0/8]`),
 but verify it if you're installing by hand.
 
 ---
 
-## 1. Install ROS 2 Jazzy
+## 1. Install ROS 2 Humble
 
 Use the bundled script — it sets the locale, adds the ROS 2 apt repo + key,
-installs `ros-jazzy-ros-base` + dev tools + the packages this stack links
+installs `ros-humble-ros-base` + dev tools + the packages this stack links
 against, installs **ONNX Runtime (C++)** to `/opt/onnxruntime`, runs
 `rosdep init/update`, and adds the `dialout`/`input` groups + `~/.bashrc`
 sourcing.
 
 ```bash
 cd ~/qmini_ros2
-bash scripts/install_ros2_jazzy.sh
+bash scripts/install_ros2_humble.sh
 ```
 
 Useful environment toggles:
 
 ```bash
 # Behind the GFW — use a Chinese mirror for Ubuntu-ports + ROS:
-USE_CN_MIRROR=1 bash scripts/install_ros2_jazzy.sh
-CN_MIRROR_HOST=mirrors.ustc.edu.cn USE_CN_MIRROR=1 bash scripts/install_ros2_jazzy.sh
+USE_CN_MIRROR=1 bash scripts/install_ros2_humble.sh
+CN_MIRROR_HOST=mirrors.ustc.edu.cn USE_CN_MIRROR=1 bash scripts/install_ros2_humble.sh
 
 # Skip the onnxruntime install (e.g. you manage it yourself):
-INSTALL_ONNX=0 bash scripts/install_ros2_jazzy.sh
+INSTALL_ONNX=0 bash scripts/install_ros2_humble.sh
 
 # Pin a different onnxruntime version (default 1.19.2):
-ORT_VER=1.19.2 bash scripts/install_ros2_jazzy.sh
+ORT_VER=1.19.2 bash scripts/install_ros2_humble.sh
 ```
 
 **Re-login (or reboot) after the script** — it changes group membership
@@ -115,7 +114,7 @@ wheel only, no C++ dev files — or the copy inside `qmini_official_sdk`.)
 
 ```bash
 cd ~/qmini_ros2
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/humble/setup.bash
 
 # resolve declared system deps for the packages under src/
 rosdep install --from-paths src --ignore-src -r -y
@@ -161,7 +160,7 @@ colcon test-result --all || true   # if you've run colcon test
 ## Troubleshooting
 
 - **`held broken packages` / `-dev` version mismatch during install** — the
-  `noble-updates` pocket is missing. See §0; then `sudo apt full-upgrade -y`.
+  `jammy-updates` pocket is missing. See §0; then `sudo apt full-upgrade -y`.
 - **`ModuleNotFoundError: No module named 'catkin_pkg'` during `colcon build`** —
   colcon is using a `~/.local` Python that lacks `catkin_pkg`. Build with the
   system Python: `PATH=/usr/bin:$PATH colcon build --cmake-args

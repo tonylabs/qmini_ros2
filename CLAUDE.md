@@ -8,8 +8,8 @@ The workspace is **scaffolded and the M1–M2 hardware-bring-up path is implemen
 
 ## Target platform
 
-- **Runtime host:** Raspberry Pi 5, Ubuntu 24.04, 4 GB RAM. Memory and CPU are tight — prefer C++ for the realtime control loop and ONNX inference path. Reserve Python for launch files, configuration, and offline tooling.
-- **ROS 2 distribution:** Jazzy Jalisco (the matching distro for Ubuntu 24.04).
+- **Runtime host:** Raspberry Pi 5, Ubuntu 22.04, 4 GB RAM. Memory and CPU are tight — prefer C++ for the realtime control loop and ONNX inference path. Reserve Python for launch files, configuration, and offline tooling.
+- **ROS 2 distribution:** Humble Hawksbill (the matching distro for Ubuntu 22.04).
 - **Workspace layout:** standard colcon workspace — packages live under `src/`, built into `build/`, `install/`, `log/` (all should be gitignored once they exist).
 
 ## Task List
@@ -95,13 +95,13 @@ The GO-M8010-6's `MotorCmd` carries `q_des`, `dq_des`, `tau_ff`, `kp`, `kd` in a
 - "Actuator latency" in calibration measures **USB → RS-485 framing latency + motor command-execution lag**, NOT the inner PD loop. This is still a real sim-to-real gap and is what the Isaac Lab `DelayedPDActuatorCfg(max_delay=...)` should be widened to cover.
 - The exact field names, units (rad vs. encoder counts, N·m vs. unitless), and CRC layout must be verified against the `unitree_actuator_sdk` headers during M1 — these have shifted between SDK versions.
 
-## Build, run, test (standard ROS 2 Jazzy workflow)
+## Build, run, test (standard ROS 2 Humble workflow)
 
-First-time machine setup (ROS 2 Jazzy install, the mandatory `noble-updates` apt pocket, ONNX Runtime C++ to `/opt/onnxruntime`, workspace build) is in **`docs/0-INSTALLATION.md`** and scripted by `scripts/install_ros2_jazzy.sh`. Once `src/` has packages, these are the commands you'll use. Run them from the workspace root (this directory).
+First-time machine setup (ROS 2 Humble install, the mandatory `jammy-updates` apt pocket, ONNX Runtime C++ to `/opt/onnxruntime`, workspace build) is in **`docs/0-INSTALLATION.md`** and scripted by `scripts/install_ros2_humble.sh`. Once `src/` has packages, these are the commands you'll use. Run them from the workspace root (this directory).
 
 ```bash
 # One-time per shell: source the distro
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/humble/setup.bash
 
 # Install ROS deps declared in package.xml across the workspace
 rosdep install --from-paths src --ignore-src -r -y
@@ -129,7 +129,7 @@ colcon test-result --verbose            # summarize failures
 ./build/qmini_controllers/test_pd_controller --gtest_filter=PDControllerTest.*
 ```
 
-Lint/format conventions for ROS 2 Jazzy: `ament_cpplint`, `ament_uncrustify`, `ament_flake8`, `ament_copyright` are wired in automatically by `ament_lint_auto` when you add it to `package.xml`. Prefer enabling these from the first package rather than retrofitting.
+Lint/format conventions for ROS 2 Humble: `ament_cpplint`, `ament_uncrustify`, `ament_flake8`, `ament_copyright` are wired in automatically by `ament_lint_auto` when you add it to `package.xml`. Prefer enabling these from the first package rather than retrofitting.
 
 ## Permissions / device access
 

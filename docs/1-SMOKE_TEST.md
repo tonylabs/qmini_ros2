@@ -37,14 +37,14 @@ skip to the [Troubleshooting](#troubleshooting) section at the bottom.
 - 24 V power supply for the motors (motors will not respond on logic power
   alone)
 - USB-C cable for the FTDI adapter
-- Pi 5 (deployment target) **or** any Ubuntu 24.04 x86_64 machine (dev). The
+- Pi 5 (deployment target) **or** any Ubuntu 22.04 x86_64 machine (dev). The
   procedure is identical; the SDK's `CMakeLists.txt` auto-selects the right
   prebuilt `.so`.
 
 ### Software
 
-- Ubuntu 24.04
-- ROS 2 Jazzy (`ros-jazzy-desktop` + `ros-dev-tools`)
+- Ubuntu 22.04
+- ROS 2 Humble (`ros-humble-desktop` + `ros-dev-tools`)
 - The repo cloned and the Unitree SDK submodule initialized:
 
   ```bash
@@ -78,7 +78,7 @@ with a Python path that is not `/usr/bin/python3` (typically
 ### 1.2 Source ROS 2 + guard PATH
 
 ```bash
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/humble/setup.bash
 export PATH=/usr/bin:$PATH
 which python3   # expected: /usr/bin/python3
 ```
@@ -90,7 +90,7 @@ nested envs were active), then re-export the PATH line.
 To make this permanent, add an alias to `~/.bashrc`:
 
 ```bash
-alias ros2dev='export PATH=/usr/bin:$PATH; conda deactivate 2>/dev/null; source /opt/ros/jazzy/setup.bash; cd ~/qmini_ros2'
+alias ros2dev='export PATH=/usr/bin:$PATH; conda deactivate 2>/dev/null; source /opt/ros/humble/setup.bash; cd ~/qmini_ros2'
 ```
 
 ### 1.3 Install ROS dependencies
@@ -210,7 +210,7 @@ In a **second terminal**:
 
 ```bash
 cd ~/qmini_ros2
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/humble/setup.bash
 source install/setup.bash
 ros2 topic hz /joint_states
 ```
@@ -409,7 +409,7 @@ colcon build --symlink-install --packages-select qmini_hardware
 
 ### A — Build failures
 
-#### A1. `Unable to locate package ros-jazzy-desktop`
+#### A1. `Unable to locate package ros-humble-desktop`
 
 Cause: the ROS 2 apt sources aren't configured.
 
@@ -418,10 +418,10 @@ Fix:
 ```bash
 sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
   -o /usr/share/keyrings/ros-archive-keyring.gpg
-echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu noble main' \
+echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu jammy main' \
   | sudo tee /etc/apt/sources.list.d/ros2.list
 sudo apt update
-sudo apt install -y ros-jazzy-desktop ros-dev-tools
+sudo apt install -y ros-humble-desktop ros-dev-tools
 ```
 
 On the Pi 5, use `arch=arm64`.

@@ -6,7 +6,7 @@ so you can move a joint and watch its angle update in place — handy for the
 homing sign/ratio check (see docs/2-HOMING.md).
 
 Usage:
-    source /opt/ros/jazzy/setup.bash
+    source /opt/ros/humble/setup.bash
     python3 scripts/joint_monitor.py                 # default 10 Hz, /joint_states
     python3 scripts/joint_monitor.py --rate 20
     python3 scripts/joint_monitor.py --topic /joint_states

@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# ROS 2 Jazzy install for Ubuntu 24.04 (Raspberry Pi 5, arm64)
+# ROS 2 Humble install for Ubuntu 22.04 (Raspberry Pi 5, arm64)
 # Used by the dreambo bipedal stack on the Pi 5 onboard computer.
 #
 # Behind the GFW? Swap to a Chinese mirror for both Ubuntu-ports and ROS 2:
-#   USE_CN_MIRROR=1 bash install_ros2_jazzy.sh
+#   USE_CN_MIRROR=1 bash install_ros2_humble.sh
 # Pick a different mirror (default: Tsinghua TUNA):
-#   CN_MIRROR_HOST=mirrors.ustc.edu.cn      USE_CN_MIRROR=1 bash install_ros2_jazzy.sh
-#   CN_MIRROR_HOST=mirrors.aliyun.com       USE_CN_MIRROR=1 bash install_ros2_jazzy.sh
-#   CN_MIRROR_HOST=repo.huaweicloud.com     USE_CN_MIRROR=1 bash install_ros2_jazzy.sh
+#   CN_MIRROR_HOST=mirrors.ustc.edu.cn      USE_CN_MIRROR=1 bash install_ros2_humble.sh
+#   CN_MIRROR_HOST=mirrors.aliyun.com       USE_CN_MIRROR=1 bash install_ros2_humble.sh
+#   CN_MIRROR_HOST=repo.huaweicloud.com     USE_CN_MIRROR=1 bash install_ros2_humble.sh
 #
 # Skip the ONNX Runtime (C++) install (default installs it for the policy node):
-#   INSTALL_ONNX=0 bash install_ros2_jazzy.sh
+#   INSTALL_ONNX=0 bash install_ros2_humble.sh
 # Pin a different ONNX Runtime version (default 1.19.2):
-#   ORT_VER=1.19.2 bash install_ros2_jazzy.sh
+#   ORT_VER=1.19.2 bash install_ros2_humble.sh
 set -euo pipefail
 
 USE_CN_MIRROR="${USE_CN_MIRROR:-0}"
@@ -21,8 +21,8 @@ INSTALL_ONNX="${INSTALL_ONNX:-1}"
 ORT_VER="${ORT_VER:-1.19.2}"
 NEED_RELOGIN=0
 
-if [ "$(. /etc/os-release && echo "$VERSION_CODENAME")" != "noble" ]; then
-  echo "Warning: ROS 2 Jazzy targets Ubuntu 24.04 (noble); detected $(. /etc/os-release && echo "$VERSION_CODENAME")." >&2
+if [ "$(. /etc/os-release && echo "$VERSION_CODENAME")" != "jammy" ]; then
+  echo "Warning: ROS 2 Humble targets Ubuntu 22.04 (jammy); detected $(. /etc/os-release && echo "$VERSION_CODENAME")." >&2
 fi
 if [ "$(dpkg --print-architecture)" != "arm64" ]; then
   echo "Warning: this script is intended for arm64 (Raspberry Pi 5); detected $(dpkg --print-architecture)." >&2
@@ -41,23 +41,35 @@ if [ "$USE_CN_MIRROR" = "1" ]; then
   done
 fi
 
-# Some Ubuntu 24.04 images (Raspberry Pi especially) ship with only the 'noble'
-# and 'noble-security' apt pockets, missing 'noble-updates'. The patched runtime
+# Some Ubuntu 22.04 images (Raspberry Pi especially) ship with only the 'jammy'
+# and 'jammy-security' apt pockets, missing 'jammy-updates'. The patched runtime
 # libs (liblz4-1, libzstd1, zlib1g, ... at versions like 1build1.1) live in
-# noble-updates, and the matching '-dev' packages depend on the EXACT version —
-# so without noble-updates the ROS install fails with "held broken packages".
-echo "[0/8] Ensure noble-updates + noble-backports pockets are enabled"
+# jammy-updates, and the matching '-dev' packages depend on the EXACT version —
+# so without jammy-updates the ROS install fails with "held broken packages".
+echo "[0/8] Ensure jammy-updates + jammy-backports pockets are enabled"
 SRC=/etc/apt/sources.list.d/ubuntu.sources
+LEGACY_SRC=/etc/apt/sources.list
 if [ -f "$SRC" ]; then
-  if ! grep -qE '^Suites:.*noble-updates' "$SRC"; then
+  if ! grep -qE '^Suites:.*jammy-updates' "$SRC"; then
     sudo cp -n "$SRC" "$SRC.bak"
-    sudo sed -i 's/^Suites: noble$/Suites: noble noble-updates noble-backports/' "$SRC"
-    echo "  Added noble-updates + noble-backports to $SRC (backup at $SRC.bak)."
+    sudo sed -i 's/^Suites: jammy$/Suites: jammy jammy-updates jammy-backports/' "$SRC"
+    echo "  Added jammy-updates + jammy-backports to $SRC (backup at $SRC.bak)."
   else
-    echo "  noble-updates already enabled."
+    echo "  jammy-updates already enabled."
+  fi
+elif [ -f "$LEGACY_SRC" ]; then
+  # 22.04 typically uses the legacy /etc/apt/sources.list. Ensure jammy-updates
+  # and jammy-backports lines exist (most stock images already have them).
+  if ! grep -qE '^[^#].*jammy-updates' "$LEGACY_SRC"; then
+    sudo cp -n "$LEGACY_SRC" "$LEGACY_SRC.bak"
+    echo "deb http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" \
+      | sudo tee -a "$LEGACY_SRC" > /dev/null
+    echo "  Appended jammy-updates to $LEGACY_SRC (backup at $LEGACY_SRC.bak)."
+  else
+    echo "  jammy-updates already enabled."
   fi
 else
-  echo "  $SRC not found (non-deb822 sources?) — ensure noble-updates is enabled manually." >&2
+  echo "  Neither $SRC nor $LEGACY_SRC found — ensure jammy-updates is enabled manually." >&2
 fi
 
 echo "[1/8] Locale"
@@ -77,7 +89,7 @@ else
 fi
 sudo curl -fsSL "$ROS_KEY_URL" -o /usr/share/keyrings/ros-archive-keyring.gpg
 
-echo "[4/8] ROS 2 apt repo (jazzy / noble / arm64)"
+echo "[4/8] ROS 2 apt repo (humble / jammy / arm64)"
 if [ "$USE_CN_MIRROR" = "1" ]; then
   ROS_REPO_URL="https://${CN_MIRROR_HOST}/ros2/ubuntu"
 else
@@ -89,12 +101,12 @@ ${ROS_REPO_URL} $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
 
 sudo apt-get update
 # full-upgrade (not plain upgrade) so the held-back runtime libs from
-# noble-updates are pulled in, keeping them in lockstep with their -dev packages.
+# jammy-updates are pulled in, keeping them in lockstep with their -dev packages.
 sudo apt-get full-upgrade -y
 
-echo "[5/8] ROS 2 Jazzy base + dev tools"
+echo "[5/8] ROS 2 Humble base + dev tools"
 sudo apt-get install -y \
-  ros-jazzy-ros-base \
+  ros-humble-ros-base \
   ros-dev-tools \
   python3-colcon-common-extensions \
   python3-rosdep \
@@ -103,32 +115,32 @@ sudo apt-get install -y \
 
 echo "[6/8] Packages commonly needed for the dreambo bipedal stack"
 sudo apt-get install -y \
-  ros-jazzy-vision-msgs \
-  ros-jazzy-cv-bridge \
-  ros-jazzy-image-transport \
-  ros-jazzy-image-transport-plugins \
-  ros-jazzy-camera-info-manager \
-  ros-jazzy-tf2-ros \
-  ros-jazzy-tf2-tools \
-  ros-jazzy-tf-transformations \
-  ros-jazzy-control-msgs \
-  ros-jazzy-controller-manager \
-  ros-jazzy-ros2-control \
-  ros-jazzy-ros2-controllers \
-  ros-jazzy-joint-state-publisher \
-  ros-jazzy-joint-state-publisher-gui \
-  ros-jazzy-robot-state-publisher \
-  ros-jazzy-xacro \
-  ros-jazzy-urdf \
-  ros-jazzy-ackermann-msgs \
-  ros-jazzy-nav-msgs \
-  ros-jazzy-sensor-msgs \
-  ros-jazzy-geometry-msgs \
-  ros-jazzy-diagnostic-msgs \
-  ros-jazzy-rmw-cyclonedds-cpp \
-  ros-jazzy-joy \
-  ros-jazzy-teleop-twist-joy \
-  ros-jazzy-teleop-twist-keyboard
+  ros-humble-vision-msgs \
+  ros-humble-cv-bridge \
+  ros-humble-image-transport \
+  ros-humble-image-transport-plugins \
+  ros-humble-camera-info-manager \
+  ros-humble-tf2-ros \
+  ros-humble-tf2-tools \
+  ros-humble-tf-transformations \
+  ros-humble-control-msgs \
+  ros-humble-controller-manager \
+  ros-humble-ros2-control \
+  ros-humble-ros2-controllers \
+  ros-humble-joint-state-publisher \
+  ros-humble-joint-state-publisher-gui \
+  ros-humble-robot-state-publisher \
+  ros-humble-xacro \
+  ros-humble-urdf \
+  ros-humble-ackermann-msgs \
+  ros-humble-nav-msgs \
+  ros-humble-sensor-msgs \
+  ros-humble-geometry-msgs \
+  ros-humble-diagnostic-msgs \
+  ros-humble-rmw-cyclonedds-cpp \
+  ros-humble-joy \
+  ros-humble-teleop-twist-joy \
+  ros-humble-teleop-twist-keyboard
 
 # Non-ROS system deps the workspace links against and tools used at runtime.
 #   libeigen3-dev — imu_n100 (Eigen quaternion math)
@@ -194,11 +206,11 @@ fi
 
 rosdep update || true
 
-if grep -q "source /opt/ros/jazzy/setup.bash" "$HOME/.bashrc"; then
-  echo "  ~/.bashrc already sources /opt/ros/jazzy/setup.bash."
+if grep -q "source /opt/ros/humble/setup.bash" "$HOME/.bashrc"; then
+  echo "  ~/.bashrc already sources /opt/ros/humble/setup.bash."
 else
-  echo "source /opt/ros/jazzy/setup.bash" >> "$HOME/.bashrc"
-  echo "  Added 'source /opt/ros/jazzy/setup.bash' to ~/.bashrc."
+  echo "source /opt/ros/humble/setup.bash" >> "$HOME/.bashrc"
+  echo "  Added 'source /opt/ros/humble/setup.bash' to ~/.bashrc."
   NEED_RELOGIN=1
 fi
 
@@ -213,14 +225,14 @@ fi
 
 echo
 echo "==================================================================="
-echo " ROS 2 Jazzy install finished."
+echo " ROS 2 Humble install finished."
 echo "==================================================================="
 if [ "$NEED_RELOGIN" = "1" ]; then
   echo
   echo " >>> RE-LOGIN REQUIRED <<<"
   echo " ~/.bashrc and/or your group membership changed. Log out and back in"
   echo " (or reboot) before continuing. For a quick test in this shell only:"
-  echo "     source /opt/ros/jazzy/setup.bash"
+  echo "     source /opt/ros/humble/setup.bash"
 fi
 echo
 echo " After re-login, verify with:"

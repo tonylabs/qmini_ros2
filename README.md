@@ -1,7 +1,7 @@
 # Qmini ROS 2
 
-ROS 2 Jazzy control stack for the Qmini bipedal robot. Designed to run on a
-Raspberry Pi 5 (Ubuntu 24.04, 4 GB RAM). Companion the training repo [Qmini Isaac Lab](https://github.com/tonylabs/python_qmini_isaaclab).
+ROS 2 Humble control stack for the Qmini bipedal robot. Designed to run on a
+Raspberry Pi 5 (Ubuntu 22.04, 4 GB RAM). Companion the training repo [Qmini Isaac Lab](https://github.com/tonylabs/python_qmini_isaaclab).
 
 ## Packages
 
@@ -22,7 +22,7 @@ Raspberry Pi 5 (Ubuntu 24.04, 4 GB RAM). Companion the training repo [Qmini Isaa
 
 ```bash
 # One-time per shell
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/humble/setup.bash
 
 # Or add to the bashrc
 source /opt/ros/humble/setup.bash

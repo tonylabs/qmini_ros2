@@ -22,12 +22,12 @@ import yaml
 
 
 def _detect_storage_id(bag_dir):
-    """Auto-detect the rosbag2 storage backend (Jazzy defaults to mcap)."""
+    """Auto-detect the rosbag2 storage backend (Humble defaults to sqlite3)."""
     if glob.glob(os.path.join(bag_dir, "*.mcap")):
         return "mcap"
     if glob.glob(os.path.join(bag_dir, "*.db3")):
         return "sqlite3"
-    return "mcap"
+    return "sqlite3"
 
 CHANNEL_OF = {
     "hip_yaw_l": "ch1_hip_yaw", "hip_yaw_r": "ch1_hip_yaw",

@@ -36,7 +36,7 @@ All numeric values are copied verbatim from the authoritative Isaac Lab repo
 ## Run
 
 ```bash
-source /opt/ros/jazzy/setup.bash && source install/setup.bash
+source /opt/ros/humble/setup.bash && source install/setup.bash
 ros2 launch qmini_bringup controller_test.launch.py
 ```
 
