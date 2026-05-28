@@ -123,6 +123,8 @@ directly — it does **not** need anything beyond a working gamepad node.
 
 ```bash
 source /opt/ros/humble/setup.bash
+source install/setup.bash
+
 ros2 run joy joy_node
 # in another shell:
 ros2 topic echo /joy
@@ -148,7 +150,13 @@ Headless fix (preferred — same pattern as `dialout`/udev for the motors):
 
 ```bash
 # Option A: group membership
-sudo usermod -aG input "$USER"          # log out/in or reboot
+sudo usermod -aG input "$USER"
+# CRITICAL: log out completely and log back in (or reboot). A new terminal
+# alone is NOT enough — children of the shell inherit the group set that was
+# fixed at login time, so `joy_node` spawned from a freshly-opened SSH still
+# runs with the old groups. `newgrp input` fixes only the current interactive
+# shell, not the joy_node you start from it. Verify after re-login:
+groups | grep -o input    # must print: input
 
 # Option B: udev rule (fold into config/udev/99-qmini.rules eventually)
 echo 'SUBSYSTEM=="input", ATTRS{idVendor}=="045e", ATTRS{idProduct}=="028e", MODE="0660", GROUP="input"' \
@@ -198,6 +206,31 @@ sudo udevadm trigger          # or replug the dongle
 ### Permission denied opening the device
 
 You're headless / not in `input` and have no ACL. See **Permissions** above.
+
+### `joy_node` runs, `/joy` exists, but no messages — `topic hz /joy` is silent
+
+> **Observed 2026-05-29:** `ros2 node list` shows `/joy_node`, `ros2 topic list`
+> shows `/joy`, but `ros2 topic echo /joy` and `ros2 topic hz /joy` see nothing
+> even on stick input. The `joy_node` debug log shows full ROS initialization
+> but **no `Opened joystick:` line** — SDL never opened the device.
+
+Root cause: SDL2's joystick subsystem reads `/dev/input/event*` (evdev), **not**
+`/dev/input/jsN` (joydev). When the user is not in the `input` group, SDL
+**silently** fails to open the device — no error, no log line. The node stays
+up, advertises the topic, and never publishes a frame.
+
+`jstest /dev/input/js0` working does **not** prove `joy_node` will work: joydev
+nodes are often more permissive (0660 root:input may already be readable to
+a freshly-installed user) than the evdev nodes SDL actually reads.
+
+Fix:
+
+```bash
+groups | grep -o input || sudo usermod -aG input "$USER"
+# then LOG OUT completely and log back in (or reboot) — see Permissions §
+groups | grep -o input    # must print: input
+ros2 run joy joy_node     # must print: Opened joystick: Microsoft X-Box 360 pad...
+```
 
 ### `joy_node` opened the wrong controller
 
