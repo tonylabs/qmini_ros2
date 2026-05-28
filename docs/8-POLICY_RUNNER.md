@@ -60,7 +60,7 @@ ros2 launch qmini_bringup policy.launch.py        # enable_torque defaults false
 
 Motors stay limp; nothing can move. Verify in other terminals:
 
-- `ros2 topic hz /imu/data` → ~65 Hz; `ros2 topic hz /joint_states` → real, no NaN.
+- `ros2 topic hz /imu/data` → ~100 Hz; `ros2 topic hz /joint_states` → real, no NaN.
 - `policy_runner_node` log: loaded `policy.onnx`, obs 44 → action 10, 50 Hz.
 - **The key check** — hold **LB+RB** (deadman), publish **no `/cmd_vel`** (zero
   command), then `ros2 topic echo /joint_target`:
